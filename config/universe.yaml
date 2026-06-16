@@ -1,0 +1,47 @@
+# Universe configuration for stock screening
+# This defines the initial universe of stocks to consider
+
+universe:
+  # S&P 500 constituents
+  include_sp500: true
+  
+  # Russell 2000 constituents (small caps)
+  include_russell2000: false
+  
+  # Custom tickers
+  custom_tickers: []
+  
+  # Sector filters
+  sectors:
+    - Technology
+    - Healthcare
+    - Financials
+    - Consumer Discretionary
+    - Industrials
+    - Communication Services
+  
+  # Exclude sectors
+  exclude_sectors:
+    - Utilities
+    - Real Estate
+    - Energy
+  
+  # Exclude industries
+  exclude_industries:
+    - Tobacco
+    - Casinos & Gaming
+    - Biotechnology
+  
+  # Market cap filters
+  min_market_cap: 100000000  # $100M minimum
+  max_market_cap: null       # No maximum
+  
+  # Price filters
+  min_price: 2.00
+  max_price: 1000.00
+  
+  # Volume filters
+  min_avg_volume_30d: 100000  # 100K shares/day minimum
+  
+  # Exclude illiquid stocks
+  min_avg_dollar_volume_30d: 1000000  # $1M/day minimum

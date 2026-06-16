@@ -1,217 +1,204 @@
-"""Configuration loading and validation for Shrek."""
+"""
+Configuration management for Shrek
+"""
 
+import os
 from pathlib import Path
 from typing import Optional
-
 import yaml
-from pydantic import BaseModel, Field
-from pydantic_settings import BaseSettings
+from dotenv import load_dotenv
+from dataclasses import dataclass
 
 
-class AccountConfig(BaseModel):
+@dataclass
+class AccountConfig:
     name: str
-    mode: str = "paper"
-    expected_equity: float = 100.0
+    mode: str
+    expected_equity: float
 
 
-class SessionConfig(BaseModel):
-    timezone: str = "America/New_York"
-    regular_open: str = "09:30"
-    observe_start: str = "09:30"
-    observe_until: str = "10:00"
-    active_start: str = "10:00"
-    active_end: str = "15:30"
-    flatten_start: str = "15:30"
-    force_flat: str = "15:55"
-    extended_hours: bool = False
+@dataclass
+class SessionConfig:
+    timezone: str
+    regular_open: str
+    regular_close: str
+    place_orders_only_during_market_hours: bool
+    no_extended_hours: bool
 
 
-class UniverseConfig(BaseModel):
-    focus: str = "same_day_small_mid_volatility"
-    watchlist_size: int = 50
-    refresh_watchlist_minutes: int = 45
-
-    require_active: bool = True
-    require_tradable: bool = True
-    require_fractionable: bool = True
-
-    exclude_etfs: bool = True
-    exclude_mega_caps: bool = True
-
-    allowed_exchanges: list[str] = ["NYSE", "NASDAQ", "ARCA", "BATS"]
-
-    price_min: float = 2.00
-    price_max: float = 80.00
-
-    min_relative_volume_after_open: float = 1.5
-    min_current_5m_dollar_volume: float = 250000
-    min_current_15m_dollar_volume: float = 750000
-    min_intraday_range_bps: float = 150
-    min_abs_return_since_open_bps: float = 40
-    max_spread_bps: float = 25.0
+@dataclass
+class UniverseConfig:
+    asset_class: str
+    require_active: bool
+    require_tradable: bool
+    require_fractionable: bool
+    allow_etfs: bool
+    allow_options: bool
+    allow_shorts: bool
+    min_price: float
+    max_price: float
+    min_market_cap: int
+    max_positions: int
+    candidate_limit_per_day: int
 
 
-class ScanConfig(BaseModel):
-    interval_seconds: int = 60
-    horizons_minutes: list[int] = [5, 10, 15, 30, 60]
-    max_new_entries_per_minute: int = 2
-    max_trades_per_day: int = 100
-    max_open_positions: int = 20
+@dataclass
+class PortfolioConfig:
+    target_cash_reserve_pct: float
+    max_single_position_pct: float
+    starter_position_pct: float
+    normal_position_pct: float
+    max_new_buys_per_day: int
+    max_sells_per_day: int
+    rebalance_frequency_days: int
 
 
-class ModelConfig(BaseModel):
-    type: str = "same_day_online_ensemble"
-    update_online: bool = True
-    min_observation_minutes_before_trading: int = 30
-    min_samples_before_online_update: int = 50
-
-    probability_entry_threshold_5m: float = 0.60
-    probability_entry_threshold_10m: float = 0.58
-    probability_entry_threshold_15m: float = 0.56
-    probability_entry_threshold_30m: float = 0.55
-    probability_entry_threshold_60m: float = 0.54
-
-    probability_exit_threshold: float = 0.50
-    min_expected_edge_after_cost_bps: float = 7.0
-
-    ensemble: EnsembleConfig
+@dataclass
+class EntryThresholds:
+    min_shrek_score: float
+    min_expected_return_12m: float
+    min_upside_downside_ratio: float
+    min_quality_score: float
+    max_risk_penalty: float
+    min_thesis_probability: float
+    min_timing_score: float
 
 
-class EnsembleConfig(BaseModel):
-    logistic_weight: float = 0.40
-    bucket_weight: float = 0.25
-    knn_weight: float = 0.20
-    transition_weight: float = 0.15
-    adaptive_weights: bool = True
+@dataclass
+class ExitThresholds:
+    trim_forward_return_below: float
+    sell_forward_return_below: float
+    sell_thesis_probability_below: float
+    review_thesis_probability_below: float
+    trim_upside_downside_below: float
+    sell_shrek_score_below: float
+    sell_risk_penalty_above: float
+    activate_trailing_after_gain: float
 
 
-class ExecutionConfig(BaseModel):
-    long_only: bool = True
-    allow_shorts: bool = False
-    allow_options: bool = False
-    allow_market_entries: bool = False
-    allow_extended_hours: bool = False
-
-    entry_order_type: str = "limit"
-    time_in_force: str = "day"
-    entry_timeout_seconds: int = 15
-    no_chase_after_cancel: bool = True
-    max_signal_age_seconds: int = 60
-    limit_price_offset_bps: float = 2.0
-
-    min_position_notional: float = 1.00
-    base_position_notional: float = 2.00
-    max_position_notional: float = 3.00
-    max_total_exposure: float = 60.00
-    max_symbol_exposure: float = 3.00
-    max_same_symbol_trades_per_day: int = 3
+@dataclass
+class OrdersConfig:
+    default_order_type: str
+    time_in_force: str
+    limit_buy_discount_bps: int
+    limit_sell_premium_bps: int
+    order_timeout_minutes: int
+    allow_market_orders: bool
 
 
-class RiskConfig(BaseModel):
-    max_daily_loss: Optional[float] = None
-    soft_daily_loss: Optional[float] = None
-    stop_after_consecutive_losses: Optional[int] = None
-
-    kill_switch_on_broker_error: bool = True
-    kill_switch_on_reconcile_failure: bool = True
-    reject_stale_signals: bool = True
-    reject_wide_spreads: bool = True
-    reject_duplicate_symbols: bool = True
-    reject_after_flatten_start: bool = True
+@dataclass
+class LLMConfig:
+    enabled: bool
+    runtime: str
+    model: str
+    require_json: bool
+    require_source_citations: bool
+    no_unsupported_claims: bool
+    max_context_chunks: int
 
 
-class ExitsConfig(BaseModel):
-    adaptive_take_profit: bool = True
-    adaptive_stop: bool = True
-    default_take_profit_pct: float = 0.008
-    default_stop_pct: float = 0.005
-    min_take_profit_pct: float = 0.006
-    max_take_profit_pct: float = 0.018
-    min_stop_pct: float = 0.004
-    max_stop_pct: float = 0.012
-    max_hold_minutes_5m: int = 8
-    max_hold_minutes_10m: int = 15
-    max_hold_minutes_15m: int = 20
-    max_hold_minutes_30m: int = 40
-    max_hold_minutes_60m: int = 75
-    force_flat: bool = True
+@dataclass
+class MemoryConfig:
+    shallow_decay_days: int
+    intermediate_decay_days: int
+    deep_decay_days: int
 
 
-class LLMConfig(BaseModel):
-    enabled: bool = False
-    intraday_direct_trading: bool = False
-    postmarket_review: bool = True
-    runtime: str = "ollama"
-    model: str = "qwen3:8b"
+@dataclass
+class RiskConfig:
+    no_daily_stop_loss: bool
+    kill_switch_on_reconcile_failure: bool
+    reject_if_market_closed: bool
+    reject_if_asset_not_fractionable: bool
+    reject_if_not_paper: bool
 
 
-class LoggingConfig(BaseModel):
-    log_all_bars: bool = True
-    log_all_features: bool = True
-    log_all_predictions: bool = True
-    log_all_signals: bool = True
-    log_all_trade_intents: bool = True
-    log_all_rejections: bool = True
-    log_all_fills: bool = True
-    log_shadow_baselines: bool = True
-
-
-class ShrekConfig(BaseModel):
+@dataclass
+class Config:
     account: AccountConfig
     session: SessionConfig
     universe: UniverseConfig
-    scan: ScanConfig
-    model: ModelConfig
-    execution: ExecutionConfig
-    risk: RiskConfig
-    exits: ExitsConfig
+    portfolio: PortfolioConfig
+    entry_thresholds: EntryThresholds
+    speculative_entry_thresholds: EntryThresholds
+    exit_thresholds: ExitThresholds
+    orders: OrdersConfig
     llm: LLMConfig
-    logging: LoggingConfig
+    memory: MemoryConfig
+    risk: RiskConfig
 
 
-class EnvSettings(BaseSettings):
-    alpaca_api_key: str
-    alpaca_secret_key: str
-    alpaca_trading_base_url: str = "https://paper-api.alpaca.markets"
-    alpaca_data_base_url: str = "https://data.alpaca.markets"
-    alpaca_data_feed: str = "iex"
-    shrek_mode: str = "paper"
-    shrek_config: str = "config/shrek.paper.yaml"
-    rust_log: str = "info"
-    ollama_base_url: str = "http://localhost:11434"
-    ollama_model: str = "qwen3:8b"
-
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        # Refuse live mode
-        if self.shrek_mode == "live":
-            raise ValueError("Live mode is not allowed. Use 'paper' or 'dry-run'.")
+def load_env() -> None:
+    """Load environment variables from .env file"""
+    load_dotenv()
 
 
-def load_config(config_path: Optional[str] = None) -> ShrekConfig:
-    """Load YAML configuration file."""
+def get_env(key: str, default: Optional[str] = None) -> str:
+    """Get environment variable with optional default"""
+    value = os.getenv(key, default)
+    if value is None:
+        raise ValueError(f"Environment variable {key} not set and no default provided")
+    return value
+
+
+def get_config_path() -> Path:
+    """Get path to config file from environment or default"""
+    config_path = os.getenv("SHREK_CONFIG", "config/shrek.paper.yaml")
+    return Path(config_path)
+
+
+def load_config(config_path: Optional[Path] = None) -> Config:
+    """Load configuration from YAML file"""
     if config_path is None:
-        env = EnvSettings()
-        config_path = env.shrek_config
+        config_path = get_config_path()
+    
+    with open(config_path, 'r') as f:
+        config_dict = yaml.safe_load(f)
+    
+    return Config(
+        account=AccountConfig(**config_dict['account']),
+        session=SessionConfig(**config_dict['session']),
+        universe=UniverseConfig(**config_dict['universe']),
+        portfolio=PortfolioConfig(**config_dict['portfolio']),
+        entry_thresholds=EntryThresholds(**config_dict['entry_thresholds']),
+        speculative_entry_thresholds=EntryThresholds(**config_dict['speculative_entry_thresholds']),
+        exit_thresholds=ExitThresholds(**config_dict['exit_thresholds']),
+        orders=OrdersConfig(**config_dict['orders']),
+        llm=LLMConfig(**config_dict['llm']),
+        memory=MemoryConfig(**config_dict['memory']),
+        risk=RiskConfig(**config_dict['risk']),
+    )
 
-    config_file = Path(config_path)
-    if not config_file.is_absolute() and not config_file.exists():
-        project_root = Path(__file__).resolve().parent.parent.parent
-        config_file = project_root / config_path
 
-    if not config_file.exists():
-        raise FileNotFoundError(f"Config file not found: {config_path}")
-
-    with open(config_file) as f:
-        config_data = yaml.safe_load(f)
-
-    return ShrekConfig(**config_data)
+def get_alpaca_config() -> dict:
+    """Get Alpaca API configuration from environment"""
+    return {
+        'api_key': get_env('ALPACA_API_KEY'),
+        'secret_key': get_env('ALPACA_SECRET_KEY'),
+        'base_url': get_env('ALPACA_TRADING_BASE_URL', 'https://paper-api.alpaca.markets'),
+        'data_base_url': get_env('ALPACA_DATA_BASE_URL', 'https://data.alpaca.markets'),
+        'data_feed': get_env('ALPACA_DATA_FEED', 'iex'),
+    }
 
 
-def get_env_settings() -> EnvSettings:
-    """Load environment settings."""
-    return EnvSettings()
+def get_llm_config() -> dict:
+    """Get LLM configuration from environment"""
+    return {
+        'base_url': get_env('OLLAMA_BASE_URL', 'http://localhost:11434'),
+        'model': get_env('OLLAMA_MODEL', 'qwen3:8b'),
+    }
+
+
+def get_sec_config() -> dict:
+    """Get SEC EDGAR configuration from environment"""
+    return {
+        'user_agent': get_env('SEC_USER_AGENT'),
+    }
+
+
+def get_shrek_mode() -> str:
+    """Get Shrek mode from environment"""
+    mode = get_env('SHREK_MODE', 'paper')
+    if mode == 'live':
+        raise ValueError("Live mode is explicitly disabled")
+    return mode

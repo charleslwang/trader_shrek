@@ -1,34 +1,51 @@
-//! Money handling using Decimal for precise financial calculations.
-
+use rust_decimal::Decimal;
 use rust_decimal::prelude::*;
 
-/// Basis points (1/100 of 1%)
-pub type Bps = i32;
-
-/// Money value represented as Decimal for precision
+/// Money type for financial calculations
 pub type Money = Decimal;
 
-/// Convert basis points to decimal multiplier
-pub fn bps_to_decimal(bps: Bps) -> Decimal {
-    Decimal::from(bps) / Decimal::from(10_000)
+/// Round to 2 decimal places (cents)
+pub fn round_to_cents(value: Money) -> Money {
+    value.round_dp(2)
+}
+
+/// Round to 4 decimal places (for precision calculations)
+pub fn round_to_precision(value: Money) -> Money {
+    value.round_dp(4)
+}
+
+/// Calculate notional from price and quantity
+pub fn calculate_notional(price: Money, quantity: Money) -> Money {
+    round_to_cents(price * quantity)
+}
+
+/// Calculate quantity from notional and price
+pub fn calculate_quantity(notional: Money, price: Money) -> Money {
+    round_to_precision(notional / price)
+}
+
+/// Calculate percentage change
+pub fn pct_change(old: Money, new: Money) -> Money {
+    if old == dec!(0) {
+        dec!(0)
+    } else {
+        (new - old) / old
+    }
+}
+
+/// Convert basis points to decimal
+pub fn bps_to_decimal(bps: i64) -> Money {
+    Decimal::from(bps) / dec!(10000)
 }
 
 /// Convert decimal to basis points
-pub fn decimal_to_bps(value: Decimal) -> Bps {
-    (value * Decimal::from(10_000))
-        .to_i32()
-        .unwrap_or(0)
+pub fn decimal_to_bps(value: Money) -> i64 {
+    (value * dec!(10000)).to_i64().unwrap_or(0)
 }
 
-/// Clamp a value between min and max
-pub fn clamp(value: Decimal, min: Decimal, max: Decimal) -> Decimal {
-    if value < min {
-        min
-    } else if value > max {
-        max
-    } else {
-        value
-    }
+/// Calculate dollar value from percentage of equity
+pub fn pct_of_equity(equity: Money, pct: Money) -> Money {
+    round_to_cents(equity * pct)
 }
 
 #[cfg(test)]
@@ -36,16 +53,30 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_bps_conversion() {
-        assert_eq!(bps_to_decimal(100), Decimal::from_str("0.01").unwrap());
-        assert_eq!(bps_to_decimal(50), Decimal::from_str("0.005").unwrap());
-        assert_eq!(decimal_to_bps(Decimal::from_str("0.01").unwrap()), 100);
+    fn test_round_to_cents() {
+        assert_eq!(round_to_cents(dec!(1.234)), dec!(1.23));
+        assert_eq!(round_to_cents(dec!(1.235)), dec!(1.24));
     }
 
     #[test]
-    fn test_clamp() {
-        assert_eq!(clamp(Decimal::from(5), Decimal::from(1), Decimal::from(10)), Decimal::from(5));
-        assert_eq!(clamp(Decimal::from(0), Decimal::from(1), Decimal::from(10)), Decimal::from(1));
-        assert_eq!(clamp(Decimal::from(15), Decimal::from(1), Decimal::from(10)), Decimal::from(10));
+    fn test_calculate_notional() {
+        assert_eq!(calculate_notional(dec!(10.50), dec!(5)), dec!(52.50));
+    }
+
+    #[test]
+    fn test_pct_change() {
+        assert_eq!(pct_change(dec!(100), dec!(110)), dec!(0.10));
+        assert_eq!(pct_change(dec!(100), dec!(90)), dec!(-0.10));
+    }
+
+    #[test]
+    fn test_bps_to_decimal() {
+        assert_eq!(bps_to_decimal(20), dec!(0.002));
+        assert_eq!(bps_to_decimal(100), dec!(0.01));
+    }
+
+    #[test]
+    fn test_pct_of_equity() {
+        assert_eq!(pct_of_equity(dec!(100), dec!(0.10)), dec!(10.00));
     }
 }

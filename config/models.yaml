@@ -1,0 +1,136 @@
+# Valuation model weights and parameters
+
+valuation_weights:
+  dcf: 0.25
+  ev_sales: 0.15
+  ev_ebitda: 0.15
+  pe: 0.15
+  fcf_yield: 0.15
+  peer_multiple: 0.10
+  historical_multiple: 0.05
+
+# Default scenario probabilities
+scenario_probabilities:
+  bear: 0.30
+  base: 0.50
+  bull: 0.20
+
+# DCF parameters
+dcf:
+  projection_years: 5
+  min_terminal_growth: 0.00
+  max_terminal_growth: 0.04
+  default_terminal_growth: 0.025
+  min_wacc: 0.05
+  max_wacc: 0.15
+  default_wacc: 0.10
+
+# Multiple parameters
+multiples:
+  # EV/Sales
+  ev_sales:
+    min: 0.5
+    max: 20.0
+    sector_benchmarks:
+      Technology: 5.0
+      Healthcare: 4.0
+      Financials: 2.0
+      Consumer: 3.0
+      Industrials: 2.5
+  
+  # EV/EBITDA
+  ev_ebitda:
+    min: 3.0
+    max: 30.0
+    sector_benchmarks:
+      Technology: 15.0
+      Healthcare: 12.0
+      Financials: 8.0
+      Consumer: 10.0
+      Industrials: 9.0
+  
+  # P/E
+  pe:
+    min: 5.0
+    max: 50.0
+    sector_benchmarks:
+      Technology: 25.0
+      Healthcare: 20.0
+      Financials: 12.0
+      Consumer: 18.0
+      Industrials: 15.0
+  
+  # FCF Yield
+  fcf_yield:
+    min: 0.02
+    max: 0.15
+    target: 0.05
+
+# Quality score weights
+quality_weights:
+  revenue_growth: 0.15
+  gross_margin: 0.15
+  operating_margin: 0.15
+  fcf_margin: 0.15
+  roic: 0.15
+  balance_sheet: 0.10
+  piotroski: 0.10
+  dilution: 0.05
+
+# Revision score weights
+revision_weights:
+  earnings_surprise: 0.25
+  guidance_revision: 0.25
+  revenue_acceleration: 0.20
+  margin_revision: 0.15
+  llm_event: 0.15
+
+# Timing score weights
+timing_weights:
+  trend_200d: 0.25
+  trend_50d: 0.20
+  relative_strength: 0.20
+  pullback_quality: 0.20
+  volume_confirmation: 0.15
+
+# Risk penalty weights
+risk_weights:
+  balance_sheet: 0.20
+  valuation: 0.15
+  dilution: 0.15
+  volatility: 0.15
+  thesis_fragility: 0.15
+  accounting: 0.10
+  llm_red_flag: 0.10
+
+# Shrek score weights
+shrek_score_weights:
+  expected_return: 0.30
+  quality: 0.25
+  revision: 0.20
+  timing: 0.15
+  risk_penalty: 0.10
+
+# Position sizing
+position_sizing:
+  kelly_fraction: 0.25
+  min_order_notional: 1.0
+  risk_free_rate: 0.04
+  
+# Evidence event weights for Bayesian thesis update
+evidence_weights:
+  earnings_beat_margin_expansion: 0.35
+  earnings_miss_margin_compression: -0.35
+  guidance_raise: 0.40
+  guidance_cut: -0.45
+  fcf_improvement: 0.25
+  fcf_deterioration: -0.25
+  debt_reduction: 0.15
+  debt_stress: -0.30
+  dilution: -0.25
+  insider_buying: 0.15
+  insider_selling: -0.10
+  accounting_red_flag: -0.60
+  regulatory_investigation: -0.50
+  product_traction: 0.25
+  competitive_threat: -0.30

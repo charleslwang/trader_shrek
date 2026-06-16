@@ -1,0 +1,66 @@
+# Risk management configuration
+
+risk_parameters:
+  # Position-level risk
+  max_single_position_loss_pct: 0.20  # Max 20% loss on any position
+  max_portfolio_drawdown_pct: 0.30    # Max 30% portfolio drawdown
+  
+  # Volatility limits
+  max_annual_volatility: 0.40         # Max 40% annualized volatility
+  max_beta: 2.0                       # Max beta relative to market
+  
+  # Concentration limits
+  max_sector_exposure_pct: 0.30       # Max 30% in any sector
+  max_industry_exposure_pct: 0.15     # Max 15% in any industry
+  
+  # Leverage
+  max_gross_exposure: 1.0             # No leverage
+  max_net_exposure: 1.0               # Fully invested max
+  
+  # Liquidity
+  min_daily_volume_ratio: 0.01        # Position <= 1% of daily volume
+  min_liquidity_days: 5               # Can exit in 5 days at current volume
+  
+  # Correlation
+  max_correlated_position_count: 5    # Max 5 highly correlated positions
+  correlation_threshold: 0.80          # Correlation threshold
+  
+  # Drawdown stops
+  drawdown_quantile: 0.85             # 85th percentile for stop calculation
+  trailing_stop_activation: 0.30      # Activate after 30% gain
+  min_trailing_stop: 0.15             # Minimum 15% trailing stop
+  
+  # Thesis risk
+  min_thesis_probability: 0.50       # Sell if thesis prob < 50%
+  thesis_review_threshold: 0.60       # Review if thesis prob < 60%
+  max_thesis_degradation: 0.10       # Max 10% thesis degradation before review
+  
+  # Accounting risk
+  max_accruals_ratio: 0.10            # Max 10% accruals ratio
+  min_cfo_to_net_income: 0.80         # CFO should be >= 80% of net income
+  
+  # Balance sheet risk
+  max_debt_to_equity: 2.0             # Max 2.0 debt/equity
+  min_current_ratio: 1.0              # Min 1.0 current ratio
+  min_interest_coverage: 3.0          # Min 3.0 interest coverage
+  
+  # Valuation risk
+  max_pe_multiple: 50                 # Max 50x P/E
+  max_ev_sales: 20                    # Max 20x EV/Sales
+  max_ev_ebitda: 30                   # Max 30x EV/EBITDA
+  
+  # Dilution risk
+  max_share_dilution_rate: 0.10       # Max 10% annual dilution
+  max_atm_dilution: 0.05              # Max 5% ATM dilution
+  
+  # Event risk
+  thesis_break_events:
+    - guidance_cut_invalidating_growth
+    - margin_collapse_unexplained
+    - severe_dilution
+    - debt_covenant_liquidity_crisis
+    - regulatory_investigation
+    - fraud_accounting_restatement
+    - management_credibility_break
+    - product_business_thesis_invalidated
+    - competitive_moat_weakened materially

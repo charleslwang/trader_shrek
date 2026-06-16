@@ -1,9 +1,11 @@
 [package]
 name = "shrek-indicators"
-version.workspace = true
-edition.workspace = true
-license.workspace = true
-authors.workspace = true
+version = "0.1.0"
+edition = "2021"
 
 [dependencies]
-rust_decimal.workspace = true
+shrek-core = { path = "../shrek-core" }
+serde = { workspace = true }
+chrono = { workspace = true }
+anyhow = { workspace = true }
+rust_decimal = { workspace = true }

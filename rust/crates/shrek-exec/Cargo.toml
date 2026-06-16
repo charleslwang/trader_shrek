@@ -1,31 +1,28 @@
 [package]
 name = "shrek-exec"
-version.workspace = true
-edition.workspace = true
-license.workspace = true
-authors.workspace = true
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "shrek-exec"
+path = "src/main.rs"
 
 [dependencies]
-shrek-core.workspace = true
-shrek-indicators.workspace = true
-
-tokio.workspace = true
-axum.workspace = true
-tower.workspace = true
-tower-http.workspace = true
-reqwest.workspace = true
-sqlx.workspace = true
-rusqlite.workspace = true
-serde.workspace = true
-serde_json.workspace = true
-serde_yaml.workspace = true
-config.workspace = true
-tracing.workspace = true
-tracing-subscriber.workspace = true
-chrono.workspace = true
-chrono-tz.workspace = true
-rust_decimal.workspace = true
-uuid.workspace = true
-anyhow.workspace = true
-thiserror.workspace = true
-clap.workspace = true
+shrek-core = { path = "../shrek-core" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+reqwest = { workspace = true }
+chrono = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+sqlx = { workspace = true }
+rust_decimal = { workspace = true }
+config = { workspace = true }
+uuid = { workspace = true }
+axum = "0.7"
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+chrono-tz = "0.8"

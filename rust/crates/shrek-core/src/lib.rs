@@ -1,12 +1,13 @@
-//! Shrek core types and shared utilities.
-//!
-//! This crate provides the foundational types used across the Shrek trading system,
-//! including money handling, trading clock, and shared data structures.
-
-pub mod clock;
-pub mod money;
-pub mod rounding;
 pub mod types;
+pub mod money;
+pub mod clock;
+pub mod rounding;
+pub mod portfolio;
+pub mod math;
 
 pub use types::*;
-pub use money::Bps;
+pub use money::*;
+pub use clock::*;
+pub use rounding::*;
+pub use portfolio::*;
+pub use math::*;

@@ -1,3 +1,6 @@
+# Environment variables
+.env
+
 # Python
 __pycache__/
 *.py[cod]
@@ -19,30 +22,16 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
-.venv/
+MANIFEST
 venv/
+env/
 ENV/
-.ENV
-.pytest_cache/
-.mypy_cache/
-.coverage
-htmlcov/
-.tox/
-.ipynb_checkpoints/
+.venv
 
 # Rust
-/target/
-**/*.rs.bk
-
-# Environment
-.env
-.env.local
-
-# Data
-data/
-*.db
-*.sqlite
-*.sqlite3
+rust/target/
+rust/**/target/
+Cargo.lock
 
 # IDE
 .vscode/
@@ -50,22 +39,27 @@ data/
 *.swp
 *.swo
 *~
-*.sublime-*
-*.code-workspace
-
-# OS
 .DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
-desktop.ini
+
+# Data
+data/
+data/filings/
+data/memory/
+data/storage/
+data/universe.txt
+data/candidates.txt
 
 # Logs
 *.log
+logs/
 
-# Temporary
-*.tmp
-*.bak
+# Database
+*.duckdb
+*.sqlite
+*.sqlite3
+
+# Parquet exports
+*.parquet
+
+# Debug
+debug/

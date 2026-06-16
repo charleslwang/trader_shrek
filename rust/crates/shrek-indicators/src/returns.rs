@@ -1,57 +1,50 @@
-//! Return calculations.
-
+use rust_decimal::Decimal;
 use rust_decimal::prelude::*;
 
-/// Calculate simple return from two prices
-pub fn simple_return(current: Decimal, previous: Decimal) -> Decimal {
-    if previous.is_zero() {
-        return Decimal::ZERO;
+/// Calculate simple return
+pub fn simple_return(old_price: Decimal, new_price: Decimal) -> Decimal {
+    if old_price == dec!(0) {
+        dec!(0)
+    } else {
+        (new_price - old_price) / old_price
     }
-    (current - previous) / previous
-}
-
-/// Calculate return in basis points
-pub fn return_bps(current: Decimal, previous: Decimal) -> i32 {
-    let ret = simple_return(current, previous);
-    (ret * Decimal::from(10_000))
-        .to_i32()
-        .unwrap_or(0)
 }
 
 /// Calculate log return
-pub fn log_return(current: Decimal, previous: Decimal) -> f64 {
-    if previous.is_zero() || current.is_zero() {
-        return 0.0;
+pub fn log_return(old_price: Decimal, new_price: Decimal) -> Decimal {
+    if old_price == dec!(0) || new_price == dec!(0) {
+        dec!(0)
+    } else {
+        (new_price / old_price).ln()
     }
-    (current.to_f64().unwrap() / previous.to_f64().unwrap()).ln()
+}
+
+/// Calculate annualized return from period return
+pub fn annualize_return(period_return: Decimal, periods_per_year: i64) -> Decimal {
+    let periods = Decimal::from(periods_per_year);
+    (dec!(1) + period_return).powd(periods.into()) - dec!(1)
+}
+
+/// Calculate cumulative return from a series of returns
+pub fn cumulative_return(returns: &[Decimal]) -> Decimal {
+    returns.iter().fold(dec!(1), |acc, r| acc * (dec!(1) + r)) - dec!(1)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rust_decimal::prelude::*;
 
     #[test]
     fn test_simple_return() {
-        let current = Decimal::from(110);
-        let previous = Decimal::from(100);
-        let ret = simple_return(current, previous);
-        assert_eq!(ret, Decimal::from_str("0.1").unwrap());
+        assert_eq!(simple_return(dec!(100), dec!(110)), dec!(0.10));
+        assert_eq!(simple_return(dec!(100), dec!(90)), dec!(-0.10));
     }
 
     #[test]
-    fn test_return_bps() {
-        let current = Decimal::from(110);
-        let previous = Decimal::from(100);
-        let bps = return_bps(current, previous);
-        assert_eq!(bps, 1000);
-    }
-
-    #[test]
-    fn test_log_return() {
-        let current = Decimal::from(110);
-        let previous = Decimal::from(100);
-        let ret = log_return(current, previous);
-        assert!((ret - 0.09531017980432493).abs() < 1e-10);
+    fn test_cumulative_return() {
+        let returns = vec![dec!(0.10), dec!(0.05), dec!(-0.02)];
+        let cum = cumulative_return(&returns);
+        // (1.10 * 1.05 * 0.98) - 1 = 1.1329 - 1 = 0.1329
+        assert!((cum - dec!(0.1329)).abs() < dec!(0.0001));
     }
 }

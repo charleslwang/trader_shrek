@@ -1,103 +1,119 @@
-//! Order management for execution (stub for Phase 2).
-
-use anyhow::Result;
-use chrono::{DateTime, Utc};
-use rust_decimal::Decimal;
-use shrek_core::{FillEvent, PositionState, SignalId};
+use anyhow::{Context, Result};
+use shrek_core::*;
+use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::info;
+use tracing::{debug, error, info, warn};
+use uuid::Uuid;
+use crate::state::AppState;
 
-use crate::{
-    alpaca_client::AlpacaClient,
-    db::Database,
-    risk::RiskEngine,
-    state::StateManager,
-};
-
-pub struct OrderManager {
-    db: Arc<Database>,
-    state_manager: Arc<StateManager>,
-    risk_engine: Arc<RiskEngine>,
-    alpaca_client: Option<Arc<AlpacaClient>>,
-    dry_run: bool,
+/// Active order tracking
+struct ActiveOrder {
+    decision_id: Uuid,
+    client_order_id: String,
+    symbol: String,
+    submitted_at: DateTime<Utc>,
+    timeout_minutes: i64,
 }
 
-impl OrderManager {
-    pub fn new(
-        db: Arc<Database>,
-        state_manager: Arc<StateManager>,
-        risk_engine: Arc<RiskEngine>,
-        alpaca_client: Option<Arc<AlpacaClient>>,
-        dry_run: bool,
-    ) -> Self {
-        Self {
-            db,
-            state_manager,
-            risk_engine,
-            alpaca_client,
-            dry_run,
+/// Submit an order to Alpaca
+pub async fn submit_order(
+    state: &AppState,
+    proposal: &OrderProposal,
+) -> Result<String> {
+    info!("Submitting order: {} {} notional={}", proposal.side, proposal.symbol, proposal.notional);
+
+    // Generate client order ID
+    let client_order_id = format!("shrek-{}", Uuid::new_v4());
+
+    // Submit to Alpaca
+    let alpaca_order_id = state
+        .alpaca_client
+        .submit_order(proposal)
+        .await
+        .context("Failed to submit order to Alpaca")?;
+
+    // Log order event
+    let event = OrderEvent {
+        id: Uuid::new_v4(),
+        decision_id: proposal.decision_id,
+        client_order_id: client_order_id.clone(),
+        symbol: proposal.symbol.clone(),
+        side: proposal.side,
+        order_type: proposal.order_type,
+        limit_price: proposal.limit_price,
+        quantity: None, // Will be filled by Alpaca
+        status: OrderStatus::New,
+        filled_quantity: dec!(0),
+        filled_price: None,
+        timestamp: Utc::now(),
+    };
+
+    db::log_order_event(&state.db_pool, &event).await?;
+
+    // Store in active orders (in-memory for now, could use Redis)
+    // This would be stored in a proper state management system
+
+    info!("Order submitted successfully: {}", alpaca_order_id);
+    Ok(alpaca_order_id)
+}
+
+/// Cancel all active orders
+pub async fn cancel_all_orders(state: &AppState) -> Result<usize> {
+    info!("Canceling all orders");
+
+    let canceled = state.alpaca_client.cancel_all_orders().await?;
+
+    info!("Canceled {} orders", canceled);
+    Ok(canceled)
+}
+
+/// Cancel a specific order
+pub async fn cancel_order(state: &AppState, order_id: &str) -> Result<()> {
+    info!("Canceling order: {}", order_id);
+
+    state.alpaca_client.cancel_order(order_id).await?;
+
+    info!("Order canceled: {}", order_id);
+    Ok(())
+}
+
+/// Start the order manager background task
+pub async fn start_order_manager(state: Arc<AppState>) {
+    info!("Starting order manager");
+
+    let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(60));
+
+    loop {
+        interval.tick().await;
+
+        if let Err(e) = check_order_timeouts(&state).await {
+            error!("Failed to check order timeouts: {}", e);
+        }
+    }
+}
+
+/// Check for order timeouts and cancel stale orders
+async fn check_order_timeouts(state: &AppState) -> Result<()> {
+    debug!("Checking for order timeouts");
+
+    // Get active orders from database
+    let active_orders = db::get_active_orders(&state.db_pool).await?;
+
+    let now = Utc::now();
+
+    for order in active_orders {
+        let elapsed = now.signed_duration_since(order.timestamp);
+        let timeout_minutes = state.config.orders.order_timeout_minutes as i64;
+
+        if elapsed.num_minutes() > timeout_minutes {
+            warn!("Order {} timed out after {} minutes", order.client_order_id, elapsed.num_minutes());
+            
+            // Cancel the order
+            if let Err(e) = state.alpaca_client.cancel_order(&order.client_order_id).await {
+                error!("Failed to cancel timed out order {}: {}", order.client_order_id, e);
+            }
         }
     }
 
-    pub async fn submit_order(
-        &self,
-        symbol: String,
-        side: String,
-        notional: Decimal,
-        limit_price: Decimal,
-        signal_id: SignalId,
-    ) -> Result<String> {
-        if self.dry_run {
-            info!(
-                "[DRY-RUN] Would submit order: {} {} {} @ {}",
-                side, symbol, notional, limit_price
-            );
-            return Ok("dry_run_order_id".to_string());
-        }
-
-        if let Some(client) = &self.alpaca_client {
-            client
-                .submit_order(&symbol, &side, notional, limit_price)
-                .await
-        } else {
-            Ok("stub_order_id".to_string())
-        }
-    }
-
-    pub async fn cancel_order(&self, order_id: &str) -> Result<()> {
-        if self.dry_run {
-            info!("[DRY-RUN] Would cancel order: {}", order_id);
-            return Ok(());
-        }
-
-        if let Some(client) = &self.alpaca_client {
-            client.cancel_order(order_id).await
-        } else {
-            Ok(())
-        }
-    }
-
-    pub async fn record_fill(&self, fill: FillEvent) -> Result<()> {
-        self.db.log_fill(&fill)?;
-        info!("Recorded fill: {} for {}", fill.fill_id, fill.symbol);
-        Ok(())
-    }
-
-    pub async fn update_position(&self, position: PositionState) -> Result<()> {
-        self.db.update_position(&position)?;
-        self.state_manager.add_position(position);
-        Ok(())
-    }
-
-    pub async fn remove_position(&self, symbol: &str) -> Result<()> {
-        self.db.remove_position(symbol)?;
-        self.state_manager.remove_position(symbol);
-        Ok(())
-    }
-
-    pub async fn reconcile(&self) -> Result<()> {
-        info!("Reconciling account state with Alpaca...");
-        // TODO: Implement actual reconciliation in Phase 7
-        Ok(())
-    }
+    Ok(())
 }
