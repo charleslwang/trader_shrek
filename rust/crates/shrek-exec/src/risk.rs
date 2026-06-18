@@ -1,7 +1,7 @@
 use anyhow::{bail, Result};
+use rust_decimal_macros::dec;
 use shrek_core::*;
-use std::sync::Arc;
-use tracing::{debug, warn};
+use tracing::debug;
 use crate::state::AppState;
 
 /// Validate an order proposal against risk rules
