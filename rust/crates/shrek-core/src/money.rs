@@ -1,5 +1,6 @@
 use rust_decimal::Decimal;
 use rust_decimal::prelude::*;
+use rust_decimal_macros::dec;
 
 /// Money type for financial calculations
 pub type Money = Decimal;

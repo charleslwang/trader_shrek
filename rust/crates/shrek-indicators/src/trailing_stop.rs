@@ -1,5 +1,6 @@
 use rust_decimal::Decimal;
 use rust_decimal::prelude::*;
+use rust_decimal_macros::dec;
 
 /// Calculate trailing stop price based on percentage
 pub fn trailing_stop_pct(entry_price: Decimal, trailing_pct: Decimal) -> Decimal {

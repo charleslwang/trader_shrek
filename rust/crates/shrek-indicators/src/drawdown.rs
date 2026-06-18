@@ -1,5 +1,6 @@
 use rust_decimal::Decimal;
 use rust_decimal::prelude::*;
+use rust_decimal_macros::dec;
 
 /// Calculate drawdown from peak
 pub fn drawdown(current_price: Decimal, peak_price: Decimal) -> Decimal {

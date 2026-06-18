@@ -1,5 +1,6 @@
 use rust_decimal::Decimal;
 use rust_decimal::prelude::*;
+use rust_decimal_macros::dec;
 
 /// Calculate simple moving average
 pub fn simple_moving_average(prices: &[Decimal], period: usize) -> Option<Decimal> {

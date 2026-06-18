@@ -1,5 +1,6 @@
 use rust_decimal::Decimal;
 use rust_decimal::prelude::*;
+use rust_decimal_macros::dec;
 
 /// Calculate standard deviation of returns
 pub fn standard_deviation(returns: &[Decimal]) -> Decimal {

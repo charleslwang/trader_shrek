@@ -1,5 +1,6 @@
 use rust_decimal::Decimal;
 use rust_decimal::prelude::*;
+use rust_decimal_macros::dec;
 
 /// Round limit price to appropriate precision for US equities
 /// US equities typically use 2 decimal places (cents)

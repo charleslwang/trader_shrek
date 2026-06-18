@@ -1,5 +1,6 @@
 use rust_decimal::Decimal;
 use rust_decimal::prelude::*;
+use rust_decimal_macros::dec;
 
 /// Calculate simple return
 pub fn simple_return(old_price: Decimal, new_price: Decimal) -> Decimal {
