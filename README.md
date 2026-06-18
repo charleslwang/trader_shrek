@@ -542,6 +542,8 @@ This runs full research for `data/candidates.txt`, stores decisions in `data/sto
 
 By default, the daily script picks a random execution time between market open and `15:30` ET, sleeps until then, starts the Rust executor if needed, and executes orders from the latest stored research. Use `--now` to execute immediately during market hours.
 
+New buy/add orders require fresh research by default. Set `SHREK_MAX_BUY_RESEARCH_AGE_DAYS` in `.env` to control the cutoff; stale research can still trigger sell/trim exits.
+
 Useful variants:
 ```bash
 ./scripts/daily_market_execute.sh --dry-run

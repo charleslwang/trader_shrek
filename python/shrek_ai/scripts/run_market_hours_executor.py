@@ -4,8 +4,11 @@ Run market hours executor - send order proposals to Rust daemon
 
 import sys
 import uuid
+import json
+import os
 import requests
 from pathlib import Path
+from datetime import datetime, date
 from loguru import logger
 
 # Add project python directory to path when running this script directly
@@ -19,6 +22,58 @@ from shrek_ai.math import (
     starter_position_size,
     add_position_size,
 )
+
+
+DEFAULT_MAX_BUY_RESEARCH_AGE_DAYS = 14
+
+
+def _parse_source_docs(source_docs) -> dict:
+    """Parse source_docs JSON stored by research; tolerate older plain strings."""
+    if isinstance(source_docs, dict):
+        return source_docs
+    if not isinstance(source_docs, str) or not source_docs.strip().startswith("{"):
+        return {}
+    try:
+        parsed = json.loads(source_docs)
+        return parsed if isinstance(parsed, dict) else {}
+    except json.JSONDecodeError:
+        return {}
+
+
+def _source_confidence(source_docs: dict, key: str, default: float) -> float:
+    try:
+        return float(source_docs.get(key, default))
+    except (TypeError, ValueError):
+        return default
+
+
+def _research_age_days(decision_date) -> int | None:
+    if decision_date is None:
+        return None
+    if isinstance(decision_date, datetime):
+        research_date = decision_date.date()
+    elif isinstance(decision_date, date):
+        research_date = decision_date
+    else:
+        try:
+            research_date = datetime.fromisoformat(str(decision_date)).date()
+        except ValueError:
+            return None
+    return (date.today() - research_date).days
+
+
+def _max_buy_research_age_days() -> int:
+    raw_value = os.getenv("SHREK_MAX_BUY_RESEARCH_AGE_DAYS")
+    if raw_value in (None, ""):
+        return DEFAULT_MAX_BUY_RESEARCH_AGE_DAYS
+    try:
+        return max(0, int(raw_value))
+    except ValueError:
+        logger.warning(
+            f"Invalid SHREK_MAX_BUY_RESEARCH_AGE_DAYS={raw_value!r}; "
+            f"using {DEFAULT_MAX_BUY_RESEARCH_AGE_DAYS}"
+        )
+        return DEFAULT_MAX_BUY_RESEARCH_AGE_DAYS
 
 
 class RustExecutor:
@@ -141,6 +196,7 @@ def main():
     orders_sent = 0
     max_new_buys = config.portfolio.max_new_buys_per_day
     max_sells = config.portfolio.max_sells_per_day
+    max_buy_research_age_days = _max_buy_research_age_days()
     new_buys_sent = 0
     sells_sent = 0
     
@@ -149,6 +205,9 @@ def main():
         symbol = decision_record['symbol']
         position = position_map.get(symbol)
         position_exists = position is not None
+        source_docs = _parse_source_docs(decision_record.get('source_docs'))
+        valuation_confidence = _source_confidence(source_docs, 'valuation_confidence', 0.65)
+        proxy_confidence = _source_confidence(source_docs, 'proxy_confidence', 0.65)
         metrics = {
             'expected_return': decision_record.get('expected_return'),
             'upside_downside': decision_record.get('upside_downside'),
@@ -159,10 +218,8 @@ def main():
             'shrek_score': decision_record.get('shrek_score'),
             'secular_conviction': decision_record.get('secular_conviction'),
             'narrative_conviction': decision_record.get('narrative_conviction'),
-            # Older rows will not have explicit provenance columns; treat them
-            # as medium confidence but still require the math gate.
-            'valuation_confidence': decision_record.get('valuation_confidence', 0.65),
-            'proxy_confidence': decision_record.get('proxy_confidence', 0.65),
+            'valuation_confidence': valuation_confidence,
+            'proxy_confidence': proxy_confidence,
         }
         validated = validate_final_decision(
             {
@@ -190,6 +247,18 @@ def main():
         if not is_buy and not is_sell:
             logger.info(f"{symbol}: {decision_type} is not actionable; skipping")
             continue
+
+        if is_buy:
+            age_days = _research_age_days(decision_record.get('date'))
+            if age_days is None:
+                logger.warning(f"{symbol}: buy blocked because research date is missing or invalid")
+                continue
+            if age_days > max_buy_research_age_days:
+                logger.warning(
+                    f"{symbol}: buy blocked because research is {age_days} days old "
+                    f"(max {max_buy_research_age_days}); rerun research before buying"
+                )
+                continue
         
         # Get current price
         try:
