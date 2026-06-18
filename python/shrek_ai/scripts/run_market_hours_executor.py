@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from shrek_ai.config import load_config, load_env
 from shrek_ai.storage import StorageManager
 from shrek_ai.alpaca_account import AlpacaAccount
+from shrek_ai.decision_policy import BUY_DECISIONS, SELL_DECISIONS, validate_final_decision
 from shrek_ai.math import (
     starter_position_size,
     add_position_size,
@@ -44,6 +45,7 @@ class RustExecutor:
         time_in_force: str = "day",
         reason: str = "",
         source_decision_path: str = "",
+        decision_id: str = None,
     ) -> dict:
         """
         Propose an order to Rust daemon.
@@ -61,7 +63,7 @@ class RustExecutor:
         Returns:
             Response from Rust daemon
         """
-        decision_id = str(uuid.uuid4())
+        decision_id = decision_id or str(uuid.uuid4())
         
         payload = {
             "decision_id": decision_id,
@@ -143,18 +145,51 @@ def main():
     sells_sent = 0
     
     for _, decision in decisions_df.iterrows():
-        symbol = decision['symbol']
-        decision_type = decision['decision']
+        decision_record = decision.to_dict()
+        symbol = decision_record['symbol']
+        position = position_map.get(symbol)
+        position_exists = position is not None
+        metrics = {
+            'expected_return': decision_record.get('expected_return'),
+            'upside_downside': decision_record.get('upside_downside'),
+            'quality': decision_record.get('quality_score'),
+            'risk_penalty': decision_record.get('risk_penalty'),
+            'thesis_probability': decision_record.get('thesis_probability'),
+            'timing': decision_record.get('timing_score'),
+            'shrek_score': decision_record.get('shrek_score'),
+            'secular_conviction': decision_record.get('secular_conviction'),
+            'narrative_conviction': decision_record.get('narrative_conviction'),
+            # Older rows will not have explicit provenance columns; treat them
+            # as medium confidence but still require the math gate.
+            'valuation_confidence': decision_record.get('valuation_confidence', 0.65),
+            'proxy_confidence': decision_record.get('proxy_confidence', 0.65),
+        }
+        validated = validate_final_decision(
+            {
+                'decision': decision_record.get('decision'),
+                'confidence': decision_record.get('decision_confidence'),
+                'reasoning': decision_record.get('decision_reasoning'),
+                'is_conviction': decision_record.get('is_conviction', False),
+            },
+            metrics,
+            position_exists=position_exists,
+            config=config,
+        )
+        decision_type = validated['decision']
+
+        if decision_type != decision_record.get('decision'):
+            logger.warning(
+                f"{symbol}: execution gate changed stored decision "
+                f"{decision_record.get('decision')} to {decision_type}: "
+                f"{validated.get('deterministic_gate_reason')}"
+            )
         
-        # Check if this is a buy or sell decision
-        is_buy = decision_type in ['BUY_STARTER', 'ADD', 'CONVICTION_BUY']
-        is_sell = decision_type in ['SELL', 'TRIM']
+        is_buy = decision_type in BUY_DECISIONS
+        is_sell = decision_type in SELL_DECISIONS
         
         if not is_buy and not is_sell:
+            logger.info(f"{symbol}: {decision_type} is not actionable; skipping")
             continue
-        
-        # Check if position exists
-        position = position_map.get(symbol)
         
         # Get current price
         try:
@@ -170,7 +205,7 @@ def main():
         if decision_type in ['BUY_STARTER', 'CONVICTION_BUY']:
             # Determine conviction boost
             conviction_boost = 1.0
-            if decision_type == 'CONVICTION_BUY' and decision.get('is_conviction'):
+            if decision_type == 'CONVICTION_BUY' and validated.get('is_conviction'):
                 conviction_boost = 1.5
                 logger.info(f"Conviction buy for {symbol}: applying {conviction_boost}x boost")
 
@@ -178,11 +213,11 @@ def main():
             notional = starter_position_size(
                 equity=equity,
                 starter_position_pct=config.portfolio.starter_position_pct,
-                expected_return=float(decision['expected_return']),
-                quality=float(decision['quality_score']),
-                risk_penalty=float(decision['risk_penalty']),
-                thesis_probability=float(decision['thesis_probability']),
-                upside_downside=float(decision['upside_downside']),
+                expected_return=float(decision_record['expected_return']),
+                quality=float(decision_record['quality_score']),
+                risk_penalty=float(decision_record['risk_penalty']),
+                thesis_probability=float(decision_record['thesis_probability']),
+                upside_downside=float(decision_record['upside_downside']),
                 conviction_boost=conviction_boost,
                 max_single_position_pct=config.portfolio.max_single_position_pct,
             )
@@ -231,7 +266,7 @@ def main():
             sells_sent += 1
             
             position_market_value = float(position['market_value'])
-            raw_trim_notional = decision.get('notional')
+            raw_trim_notional = decision_record.get('notional')
             trim_notional = float(raw_trim_notional) if raw_trim_notional is not None and raw_trim_notional == raw_trim_notional else position_market_value * 0.5
             notional = position_market_value if decision_type == 'SELL' else trim_notional
             side = "sell"
@@ -251,8 +286,9 @@ def main():
                 order_type="limit",
                 limit_price=limit_price,
                 time_in_force=config.orders.time_in_force,
-                reason=f"{decision_type} decision from latest research (dated {decision['date']})",
-                source_decision_path=f"data/decisions/{decision['decision_id']}.json",
+                reason=f"{decision_type} decision from latest research (dated {decision_record['date']})",
+                source_decision_path=f"data/decisions/{decision_record['decision_id']}.json",
+                decision_id=str(decision_record['decision_id']),
             )
             
             if response.get('status') == 'accepted':
@@ -263,14 +299,30 @@ def main():
                     f"broker_order_id={response.get('broker_order_id')}"
                 )
                 orders_sent += 1
-                
-                # Update decision in storage
-                # (Would need update method in storage_manager)
+                storage_manager.update_decision_execution(
+                    str(decision_record['decision_id']),
+                    order_sent=True,
+                    rust_accept=True,
+                    rust_reject_reason=None,
+                )
             else:
-                logger.warning(f"Order rejected for {symbol}: {response.get('reason')}")
+                reason = response.get('reason', 'Unknown rejection')
+                logger.warning(f"Order rejected for {symbol}: {reason}")
+                storage_manager.update_decision_execution(
+                    str(decision_record['decision_id']),
+                    order_sent=True,
+                    rust_accept=False,
+                    rust_reject_reason=reason,
+                )
         
         except Exception as e:
             logger.error(f"Failed to propose order for {symbol}: {e}")
+            storage_manager.update_decision_execution(
+                str(decision_record['decision_id']),
+                order_sent=True,
+                rust_accept=False,
+                rust_reject_reason=str(e),
+            )
     
     logger.info(f"Market hours executor complete. Sent {orders_sent} orders.")
 

@@ -9,6 +9,7 @@ from loguru import logger
 
 from ..config import get_llm_config
 from ..llm import LLMClient
+from ..decision_policy import normalize_agent_decision
 from ..math import (
     expected_return,
     upside_downside_ratio,
@@ -126,6 +127,7 @@ class PortfolioManager:
         if mathematical_scores is None:
             return decision
         
+        decision = normalize_agent_decision(decision)
         decision_type = decision.get('decision', 'AVOID')
         
         # If LLM recommends CONVICTION_BUY, verify conviction criteria

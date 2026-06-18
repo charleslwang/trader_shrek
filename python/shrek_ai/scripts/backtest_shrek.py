@@ -80,6 +80,7 @@ def main() -> None:
         "sharpe_ratio": results["sharpe_ratio"],
         "max_drawdown": results["max_drawdown"],
         "num_trades": results["num_trades"],
+        "baselines": results.get("baselines", {}),
         "output": str(args.output),
     }, indent=2))
 

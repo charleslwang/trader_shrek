@@ -4,6 +4,7 @@ Research a single company
 
 import sys
 import uuid
+import json
 from pathlib import Path
 from datetime import datetime
 import pandas as pd
@@ -27,6 +28,7 @@ from shrek_ai.agents import (
 from shrek_ai.memory import MemorySystem
 from shrek_ai.storage import StorageManager
 from shrek_ai.multi_agent import MultiAgentDebater
+from shrek_ai.decision_policy import validate_final_decision
 from shrek_ai.math import (
     scenario_valuation,
     expected_return,
@@ -41,6 +43,17 @@ from shrek_ai.math import (
     shrek_score,
     update_scenario_probabilities,
 )
+
+
+VALUATION_METHODS = {
+    'dcf',
+    'ev_sales',
+    'ev_ebitda',
+    'pe',
+    'fcf_yield',
+    'peer_multiple',
+    'historical_multiple',
+}
 
 
 def _compute_price_signals(bars_df) -> dict:
@@ -122,6 +135,94 @@ def _compute_price_signals(bars_df) -> dict:
         'high_52w': high_52w,
         'low_52w': low_52w,
     }
+
+
+def _valuation_value(raw_value):
+    if isinstance(raw_value, dict):
+        return raw_value.get('value')
+    return raw_value
+
+
+def _valuation_source(raw_value) -> dict:
+    if isinstance(raw_value, dict):
+        return {
+            'source': raw_value.get('source', 'llm'),
+            'date': raw_value.get('date'),
+            'method': raw_value.get('method'),
+            'confidence': raw_value.get('confidence', 0.5),
+            'inferred': bool(raw_value.get('inferred', False)),
+        }
+    return {
+        'source': 'llm_inferred',
+        'date': datetime.now().date().isoformat(),
+        'method': 'unstructured_llm_output',
+        'confidence': 0.35,
+        'inferred': True,
+    }
+
+
+def _extract_valuation_scenarios(valuation_analysis: dict) -> tuple[dict, dict, dict, dict, float]:
+    """Extract numeric valuation outputs and mandatory assumption provenance."""
+    raw_scenarios = valuation_analysis.get('valuation_results') or valuation_analysis.get('valuation_assumptions', {})
+    numeric_scenarios = {'bear': {}, 'base': {}, 'bull': {}}
+    provenance = {'bear': {}, 'base': {}, 'bull': {}}
+    confidence_values = []
+
+    for scenario in ['bear', 'base', 'bull']:
+        scenario_values = raw_scenarios.get(scenario, {}) if isinstance(raw_scenarios, dict) else {}
+        if not isinstance(scenario_values, dict):
+            continue
+
+        for method, raw_value in scenario_values.items():
+            value = _valuation_value(raw_value)
+            try:
+                numeric_value = float(value)
+            except (TypeError, ValueError):
+                continue
+
+            source = _valuation_source(raw_value)
+            source['value'] = numeric_value
+            source['method'] = source.get('method') or method
+            provenance[scenario][method] = source
+            confidence_values.append(float(source.get('confidence', 0.0)))
+
+            if method in VALUATION_METHODS:
+                numeric_scenarios[scenario][method] = numeric_value
+
+    common_methods = (
+        set(numeric_scenarios['bear'])
+        & set(numeric_scenarios['base'])
+        & set(numeric_scenarios['bull'])
+    )
+    if not common_methods:
+        logger.warning("No common per-share valuation methods with provenance; blocking buy decisions")
+        return (
+            numeric_scenarios['bear'],
+            numeric_scenarios['base'],
+            numeric_scenarios['bull'],
+            provenance,
+            0.0,
+        )
+
+    method_confidences = []
+    for scenario in ['bear', 'base', 'bull']:
+        for method in common_methods:
+            method_confidences.append(float(provenance[scenario][method].get('confidence', 0.0)))
+
+    valuation_confidence = (
+        sum(method_confidences) / len(method_confidences)
+        if method_confidences
+        else sum(confidence_values) / len(confidence_values)
+        if confidence_values
+        else 0.0
+    )
+    return (
+        numeric_scenarios['bear'],
+        numeric_scenarios['base'],
+        numeric_scenarios['bull'],
+        provenance,
+        max(0.0, min(1.0, valuation_confidence)),
+    )
 
 
 def research_company(symbol: str):
@@ -283,12 +384,16 @@ def research_company(symbol: str):
         additional_context=enriched_context,
     )
     
-    # Calculate valuation scenarios
-    valuation_assumptions = valuation_analysis.get('valuation_assumptions', {})
-    
-    bear_scenarios = valuation_assumptions.get('bear', {})
-    base_scenarios = valuation_assumptions.get('base', {})
-    bull_scenarios = valuation_assumptions.get('bull', {})
+    # Calculate valuation scenarios. Valuation values must be per-share outputs
+    # with provenance; raw growth/multiple assumptions are kept for context but
+    # are not treated as valuation methods.
+    (
+        bear_scenarios,
+        base_scenarios,
+        bull_scenarios,
+        valuation_provenance,
+        valuation_confidence,
+    ) = _extract_valuation_scenarios(valuation_analysis)
     
     v_bear, v_base, v_bull = scenario_valuation(
         bear_scenarios,
@@ -346,10 +451,12 @@ def research_company(symbol: str):
         return default
 
     # Quality: try filing_analysis -> quality_metrics, else price-derived trend proxy
+    score_sources = {}
     quality = _safe_score(
         filing_analysis or {}, 'quality_metrics', 'overall',
         default=price_signals.get('quality', 0.65)
     ) if filing_analysis else price_signals.get('quality', 0.65)
+    score_sources['quality'] = 'filing_analysis' if filing_analysis else 'price_proxy'
 
     # Revision: try earnings_analysis, else price-momentum proxy
     revision = revision_score(
@@ -359,6 +466,7 @@ def research_company(symbol: str):
         margin_revision=_safe_score(earnings_analysis or {}, 'margin_revision_score', default=price_signals.get('margin_revision', 0.5)),
         llm_event=_safe_score(filing_analysis or {}, 'event_score', default=0.5),
     )
+    score_sources['revision'] = 'earnings_analysis' if earnings_analysis else 'price_proxy'
 
     # Timing: try timing_analysis, else price-derived timing proxy
     timing = timing_score(
@@ -368,6 +476,7 @@ def research_company(symbol: str):
         pullback_quality=_safe_score(timing_analysis or {}, 'pullback_quality_score', default=price_signals.get('pullback_quality', 0.5)),
         volume_confirmation=_safe_score(timing_analysis or {}, 'volume_confirmation_score', default=price_signals.get('volume_confirmation', 0.5)),
     )
+    score_sources['timing'] = 'timing_analysis' if timing_analysis else 'price_proxy'
 
     # Risk: try risk_analysis, else price-derived volatility proxy
     risk_pen = risk_penalty(
@@ -379,12 +488,22 @@ def research_company(symbol: str):
         accounting_risk=_safe_score(risk_analysis or {}, 'accounting_risk', default=price_signals.get('accounting_risk', 0.1)),
         llm_red_flag_risk=_safe_score(risk_analysis or {}, 'llm_red_flag_risk', default=price_signals.get('llm_red_flag_risk', 0.1)),
     )
+    score_sources['risk'] = 'risk_analysis' if risk_analysis else 'price_proxy'
 
     # Piotroski: accept raw 0-9 F-score if present, else neutral/high-quality default
     raw_f_score = _safe_float(filing_analysis or {}, 'piotroski_f_score', default=7.0)
     piotroski = piotroski_score(int(max(0, min(9, round(raw_f_score)))))
+    score_sources['piotroski'] = 'filing_analysis' if filing_analysis else 'neutral_default'
 
-    # Thesis probability: start at 0.70, adjust based on evidence
+    proxy_count = sum(1 for source in score_sources.values() if source in {'price_proxy', 'neutral_default'})
+    proxy_confidence = max(0.0, min(1.0, 1.0 - proxy_count * 0.12))
+    if proxy_count >= 3:
+        logger.warning(
+            f"{symbol}: {proxy_count} core scores are proxy/default derived; applying confidence penalty"
+        )
+        risk_pen = min(1.0, risk_pen + 0.03 * proxy_count)
+
+    # Thesis probability: start at 0.70, adjust based on evidence and data quality.
     thesis_probability = 0.70
     if earnings_analysis:
         # Boost/cut based on earnings surprise and guidance
@@ -405,6 +524,13 @@ def research_company(symbol: str):
         high_severity = sum(1 for r in red_flags if isinstance(r, dict) and r.get('severity') == 'high')
         if high_severity >= 2:
             thesis_probability = max(0.50, thesis_probability - 0.10)
+
+    thesis_probability = max(
+        0.50,
+        thesis_probability
+        - max(0.0, 0.55 - valuation_confidence) * 0.20
+        - proxy_count * 0.02,
+    )
 
     p_bear, p_base, p_bull = update_scenario_probabilities(thesis_probability)
 
@@ -485,6 +611,9 @@ Filing Analysis: {filing_analysis if tenk else 'Not available'}
                     'timing': timing,
                     'secular_conviction': secular_conviction,
                     'narrative_conviction': narrative_conviction,
+                    'shrek_score': shrek,
+                    'valuation_confidence': valuation_confidence,
+                    'proxy_confidence': proxy_confidence,
                 }
             }
         )
@@ -520,6 +649,9 @@ Filing Analysis: {filing_analysis if tenk else 'Not available'}
                     'timing': timing,
                     'secular_conviction': secular_conviction,
                     'narrative_conviction': narrative_conviction,
+                    'shrek_score': shrek,
+                    'valuation_confidence': valuation_confidence,
+                    'proxy_confidence': proxy_confidence,
                 },
             )
             decision['multi_agent'] = False
@@ -541,9 +673,48 @@ Filing Analysis: {filing_analysis if tenk else 'Not available'}
                 'timing': timing,
                 'secular_conviction': secular_conviction,
                 'narrative_conviction': narrative_conviction,
+                'shrek_score': shrek,
+                'valuation_confidence': valuation_confidence,
+                'proxy_confidence': proxy_confidence,
             },
         )
         decision['multi_agent'] = False
+
+    metrics = {
+        'expected_return': exp_return,
+        'upside_downside': ud_ratio,
+        'quality': quality,
+        'risk_penalty': risk_pen,
+        'thesis_probability': thesis_probability,
+        'timing': timing,
+        'shrek_score': shrek,
+        'secular_conviction': secular_conviction,
+        'narrative_conviction': narrative_conviction,
+        'valuation_confidence': valuation_confidence,
+        'proxy_confidence': proxy_confidence,
+    }
+    decision = validate_final_decision(
+        decision,
+        metrics,
+        position_exists=None,
+        config=config,
+    )
+    if decision.get('confidence') is not None:
+        decision['confidence'] = min(
+            float(decision.get('confidence', 0.0)),
+            valuation_confidence,
+            proxy_confidence,
+        )
+    else:
+        decision['confidence'] = min(valuation_confidence, proxy_confidence)
+
+    source_docs = {
+        'sources': ['filing_analysis', 'valuation_analysis', 'risk_analysis', 'timing_analysis'],
+        'valuation_provenance': valuation_provenance,
+        'valuation_confidence': valuation_confidence,
+        'score_sources': score_sources,
+        'proxy_confidence': proxy_confidence,
+    }
     
     # Save decision
     decision_id = str(uuid.uuid4())
@@ -573,7 +744,7 @@ Filing Analysis: {filing_analysis if tenk else 'Not available'}
         'order_sent': False,
         'rust_accept': False,
         'rust_reject_reason': None,
-        'source_docs': 'filing_analysis,valuation_analysis,risk_analysis,timing_analysis',
+        'source_docs': json.dumps(source_docs, sort_keys=True),
         'memo_path': None,
         'multi_agent': decision.get('multi_agent', False),
         'consensus_score': decision.get('consensus_score', None),

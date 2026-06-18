@@ -11,6 +11,7 @@ import json
 
 from .llm import LLMClient
 from .config import MultiAgentConfig, AgentConfig
+from .decision_policy import normalize_decision_label
 
 
 @dataclass
@@ -280,7 +281,8 @@ Context:
         prompt += """
 Please provide:
 1. Your analysis of the opportunity
-2. Your recommendation (buy/sell/hold with specifics)
+2. Your recommendation using exactly one action from:
+   AVOID, WATCH, HOLD, BUY_STARTER, ADD, CONVICTION_BUY, TRIM, SELL
 3. Your confidence level (0.0-1.0)
 4. Key factors supporting your decision
 5. Key risks or concerns
@@ -289,7 +291,7 @@ Respond in JSON format with the following structure:
 {
     "reasoning": "detailed analysis",
     "decision": {
-        "action": "buy/sell/hold",
+        "action": "AVOID/WATCH/HOLD/BUY_STARTER/ADD/CONVICTION_BUY/TRIM/SELL",
         "position_size": "recommended size if applicable",
         "confidence": 0.0-1.0,
         "key_factors": ["factor1", "factor2"],
@@ -372,8 +374,8 @@ Respond in JSON format with the same structure as before.
             return 0.0
         
         # Check if actions match
-        action_a = decision_a.get('action', '')
-        action_b = decision_b.get('action', '')
+        action_a = normalize_decision_label(decision_a.get('action', ''))
+        action_b = normalize_decision_label(decision_b.get('action', ''))
         
         if action_a != action_b:
             return 0.0
@@ -408,7 +410,7 @@ Respond in JSON format with the same structure as before.
             return decision_a
         
         # If actions match, use the more confident one
-        if decision_a.get('action') == decision_b.get('action'):
+        if normalize_decision_label(decision_a.get('action')) == normalize_decision_label(decision_b.get('action')):
             if decision_a.get('confidence', 0) >= decision_b.get('confidence', 0):
                 return decision_a
             else:

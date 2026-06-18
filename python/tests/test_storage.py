@@ -100,6 +100,55 @@ def test_get_decisions(tmp_path):
     assert len(decisions) == 3
 
 
+def test_update_decision_execution(tmp_path):
+    """Test updating decision execution status"""
+    storage_manager = StorageManager(tmp_path)
+
+    decision = {
+        'decision_id': 'test-001',
+        'date': datetime.now().date().isoformat(),
+        'symbol': 'AAPL',
+        'current_price': 150.0,
+        'v_bear': 120.0,
+        'v_base': 150.0,
+        'v_bull': 180.0,
+        'p_bear': 0.30,
+        'p_base': 0.50,
+        'p_bull': 0.20,
+        'expected_return': 0.20,
+        'downside': 0.20,
+        'upside_downside': 2.0,
+        'thesis_probability': 0.70,
+        'quality_score': 0.70,
+        'piotroski_score': 0.70,
+        'revision_score': 0.50,
+        'timing_score': 0.50,
+        'risk_penalty': 0.30,
+        'shrek_score': 0.75,
+        'decision': 'BUY_STARTER',
+        'notional': 10000.0,
+        'order_sent': False,
+        'rust_accept': False,
+        'rust_reject_reason': None,
+        'source_docs': 'test',
+        'memo_path': None,
+    }
+    storage_manager.save_decision(decision)
+
+    storage_manager.update_decision_execution(
+        'test-001',
+        order_sent=True,
+        rust_accept=False,
+        rust_reject_reason='risk check failed',
+    )
+
+    decisions = storage_manager.get_decisions(symbol='AAPL')
+    row = decisions.iloc[0]
+    assert bool(row['order_sent']) is True
+    assert bool(row['rust_accept']) is False
+    assert row['rust_reject_reason'] == 'risk check failed'
+
+
 def test_save_feature(tmp_path):
     """Test saving a feature"""
     storage_manager = StorageManager(tmp_path)

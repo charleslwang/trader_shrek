@@ -19,7 +19,24 @@ You will receive:
 
 ## Your Analysis
 
-Provide valuation assumptions for each scenario (bear, base, bull):
+Provide valuation outputs and assumptions for each scenario (bear, base, bull).
+
+For each scenario, first provide **per-share valuation outputs** using any methods that are supportable from the provided data:
+- `dcf`
+- `ev_sales`
+- `ev_ebitda`
+- `pe`
+- `fcf_yield`
+- `peer_multiple`
+- `historical_multiple`
+
+Each valuation output must be an object containing:
+- `value`: numeric per-share equity value
+- `source`: source document, dataset, or model basis
+- `date`: source date or today's date if inferred from current context
+- `method`: valuation method name
+- `confidence`: 0.0 to 1.0
+- `inferred`: true if the value is LLM-inferred rather than directly computed from cited financial data
 
 For each scenario, specify:
 
@@ -52,6 +69,62 @@ You must output valid JSON with this exact structure:
 ```json
 {
   "symbol": "XYZ",
+  "valuation_results": {
+    "bear": {
+      "dcf": {
+        "value": 80.0,
+        "source": "latest_10k_and_current_market_data",
+        "date": "2026-06-18",
+        "method": "dcf",
+        "confidence": 0.65,
+        "inferred": true
+      },
+      "peer_multiple": {
+        "value": 76.0,
+        "source": "peer_group_multiples",
+        "date": "2026-06-18",
+        "method": "peer_multiple",
+        "confidence": 0.60,
+        "inferred": true
+      }
+    },
+    "base": {
+      "dcf": {
+        "value": 105.0,
+        "source": "latest_10k_and_current_market_data",
+        "date": "2026-06-18",
+        "method": "dcf",
+        "confidence": 0.65,
+        "inferred": true
+      },
+      "peer_multiple": {
+        "value": 100.0,
+        "source": "peer_group_multiples",
+        "date": "2026-06-18",
+        "method": "peer_multiple",
+        "confidence": 0.60,
+        "inferred": true
+      }
+    },
+    "bull": {
+      "dcf": {
+        "value": 145.0,
+        "source": "latest_10k_and_current_market_data",
+        "date": "2026-06-18",
+        "method": "dcf",
+        "confidence": 0.60,
+        "inferred": true
+      },
+      "peer_multiple": {
+        "value": 135.0,
+        "source": "peer_group_multiples",
+        "date": "2026-06-18",
+        "method": "peer_multiple",
+        "confidence": 0.55,
+        "inferred": true
+      }
+    }
+  },
   "valuation_assumptions": {
     "bear": {
       "revenue_growth": 0.02,
@@ -110,8 +183,8 @@ You must output valid JSON with this exact structure:
 1. **Realistic Assumptions**: All assumptions must be realistic and grounded in historical data and industry norms.
 2. **WACC > Terminal Growth**: WACC must always be greater than terminal growth rate.
 3. **Terminal Growth Limits**: Terminal growth must be between 0% and 4%.
-4. **No Invented Financials**: Do not invent financial values. Use provided data or reasonable estimates based on peers.
-5. **Peer Multiples**: Peer multiples should be based on actual market data, not invented.
+4. **No Invented Financials**: Do not invent financial values. Use provided data or reasonable estimates based on peers, and mark inferred values with `"inferred": true`.
+5. **Peer Multiples**: Peer multiples should be based on actual market data where available; otherwise lower confidence and mark inferred.
 6. **Conservative Bear Case**: Bear case should be genuinely conservative, not just slightly below base.
 7. **Reasonable Bull Case**: Bull case should be optimistic but achievable, not fantasy.
 

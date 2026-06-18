@@ -169,8 +169,10 @@ class Backtest:
         """
         logger.info(f"Running backtest from {self.start_date} to {self.end_date}")
 
-        # Pre-fetch price history for all symbols
-        for symbol in symbols:
+        benchmark_symbols = ['SPY', 'QQQ']
+
+        # Pre-fetch price history for all candidate and benchmark symbols.
+        for symbol in list(dict.fromkeys(symbols + benchmark_symbols)):
             try:
                 bars = self.alpaca.get_bars(
                     symbol,
@@ -196,6 +198,7 @@ class Backtest:
             self._simulate_day(date, symbols, rebalance_frequency)
 
         results = self._calculate_results()
+        results['baselines'] = self._calculate_baselines(symbols, trading_days, benchmark_symbols)
         logger.info(f"Backtest complete. Final value: ${results['final_value']:,.2f}")
         return results
 
@@ -454,6 +457,117 @@ class Backtest:
             'trades': self.trades,
         }
 
+    def _results_from_curve(self, values: List[float]) -> Dict[str, float]:
+        if not values:
+            values = [self.initial_capital]
+        final_value = values[-1]
+        total_return = (final_value / self.initial_capital) - 1
+        returns = pd.Series(values).pct_change().dropna()
+        n_days = len(values)
+        annualized_return = (1 + total_return) ** (252 / max(1, n_days)) - 1
+        volatility = returns.std() * (252 ** 0.5) if len(returns) > 1 else 0.0
+        sharpe = annualized_return / volatility if volatility > 0 else 0.0
+        return {
+            'final_value': final_value,
+            'total_return': total_return,
+            'annualized_return': annualized_return,
+            'volatility': volatility,
+            'sharpe_ratio': sharpe,
+            'max_drawdown': max_drawdown(values),
+        }
+
+    def _buy_and_hold_curve(self, symbols: List[str], trading_days: List[str]) -> List[float]:
+        valid_symbols = [symbol for symbol in symbols if symbol in self.price_history]
+        if not valid_symbols:
+            return [self.initial_capital for _ in trading_days]
+
+        weights = {symbol: 1.0 / len(valid_symbols) for symbol in valid_symbols}
+        shares = {}
+        for symbol in valid_symbols:
+            hist = self.price_history[symbol]
+            in_window = hist[hist.index.strftime('%Y-%m-%d') >= self.start_date]
+            if in_window.empty:
+                continue
+            first_price = float(in_window.iloc[0])
+            if first_price > 0:
+                shares[symbol] = (self.initial_capital * weights[symbol]) / first_price
+
+        curve = []
+        for date in trading_days:
+            value = 0.0
+            for symbol, share_count in shares.items():
+                hist = self.price_history[symbol]
+                visible = hist[hist.index.strftime('%Y-%m-%d') <= date]
+                if not visible.empty:
+                    value += share_count * float(visible.iloc[-1])
+            curve.append(value if value > 0 else self.initial_capital)
+        return curve
+
+    def _quality_value_symbols(self, symbols: List[str], trading_days: List[str]) -> List[str]:
+        if not trading_days:
+            return []
+        start = trading_days[0]
+        scored = []
+        for symbol in symbols:
+            hist = self.price_history.get(symbol)
+            if hist is None:
+                continue
+            visible = hist[hist.index.strftime('%Y-%m-%d') <= start]
+            if len(visible) < 50:
+                continue
+            signals = _compute_price_signals(visible)
+            if not signals:
+                continue
+            score = (
+                signals['shrek_score']
+                + signals['quality']
+                + max(0.0, min(1.0, signals['expected_return']))
+                - signals['risk_penalty']
+            )
+            scored.append((score, symbol))
+        scored.sort(reverse=True)
+        count = max(1, min(10, max(1, len(scored) // 4))) if scored else 0
+        return [symbol for _, symbol in scored[:count]]
+
+    def _calculate_baselines(
+        self,
+        symbols: List[str],
+        trading_days: List[str],
+        benchmark_symbols: List[str],
+    ) -> Dict[str, Any]:
+        """Compare Shrek against simple, boring alternatives."""
+        baselines: Dict[str, Any] = {}
+
+        for benchmark in benchmark_symbols:
+            baselines[benchmark] = self._results_from_curve(
+                self._buy_and_hold_curve([benchmark], trading_days)
+            )
+
+        candidate_symbols = [symbol for symbol in symbols if symbol in self.price_history]
+        baselines['equal_weight_candidates'] = self._results_from_curve(
+            self._buy_and_hold_curve(candidate_symbols, trading_days)
+        )
+
+        rng = np.random.default_rng(42)
+        random_count = max(1, min(10, len(candidate_symbols))) if candidate_symbols else 0
+        random_symbols = (
+            list(rng.choice(candidate_symbols, size=random_count, replace=False))
+            if random_count
+            else []
+        )
+        baselines['random_equal_weight_candidates'] = {
+            **self._results_from_curve(self._buy_and_hold_curve(random_symbols, trading_days)),
+            'symbols': random_symbols,
+        }
+
+        quality_value_symbols = self._quality_value_symbols(candidate_symbols, trading_days)
+        baselines['quality_value_screen'] = {
+            **self._results_from_curve(self._buy_and_hold_curve(quality_value_symbols, trading_days)),
+            'symbols': quality_value_symbols,
+        }
+
+        return baselines
+
     def save_results(self, results: Dict[str, Any], output_path: Path):
         """Save backtest results to JSON."""
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -474,6 +588,7 @@ class Backtest:
             'timestamps': results['timestamps'],
             'portfolio_values': results['portfolio_values'],
             'trades': results['trades'],
+            'baselines': results.get('baselines', {}),
         }
 
         with open(output_path, 'w') as f:

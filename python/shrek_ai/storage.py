@@ -136,6 +136,25 @@ class StorageManager:
         ))
         
         logger.debug(f"Saved decision {decision.get('decision_id')}")
+
+    def update_decision_execution(
+        self,
+        decision_id: str,
+        *,
+        order_sent: bool,
+        rust_accept: bool,
+        rust_reject_reason: Optional[str] = None,
+    ) -> None:
+        """Update execution status for a stored decision."""
+        self.conn.execute(
+            """
+            UPDATE decisions
+            SET order_sent = ?, rust_accept = ?, rust_reject_reason = ?
+            WHERE decision_id = ?
+            """,
+            (order_sent, rust_accept, rust_reject_reason, decision_id),
+        )
+        logger.debug(f"Updated execution status for decision {decision_id}")
     
     def get_decisions(
         self,
