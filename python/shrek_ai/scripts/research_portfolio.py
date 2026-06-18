@@ -13,12 +13,14 @@ Usage:
 """
 
 import sys
+import json
 import argparse
+import math
 from pathlib import Path
 from datetime import datetime
 from loguru import logger
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from shrek_ai.config import load_config, load_env, get_llm_config
 from shrek_ai.alpaca_account import AlpacaAccount
@@ -62,10 +64,30 @@ Respond with valid JSON only:
 """
 
 
+def safe_float(value, default: float = 0.0) -> float:
+    """Convert API/storage values to finite floats."""
+    try:
+        parsed = float(value)
+        return parsed if math.isfinite(parsed) else default
+    except (TypeError, ValueError):
+        return default
+
+
+def normalize_symbol(symbol: str) -> str:
+    """Normalize a ticker symbol from CLI, Alpaca, or storage."""
+    return str(symbol).upper().strip()
+
+
+def normalize_assessment(value: str) -> str:
+    """Normalize model output into one of the accepted assessment labels."""
+    assessment = str(value or "HOLD").upper().strip()
+    return assessment if assessment in {"HOLD", "TRIM", "SELL", "RESEARCH"} else "HOLD"
+
+
 def load_last_decision(storage_manager: StorageManager, symbol: str) -> dict:
     """Load the most recent full research decision for a symbol"""
     decisions = storage_manager.get_decisions(symbol=symbol)
-    if len(decisions) == 0:
+    if decisions is None or len(decisions) == 0:
         return None
     
     # Sort by date descending, take most recent
@@ -73,19 +95,20 @@ def load_last_decision(storage_manager: StorageManager, symbol: str) -> dict:
     latest = decisions.iloc[0]
     
     return {
-        'decision': latest.get('decision', 'AVOID'),
+        'decision': str(latest.get('decision', 'AVOID')).upper(),
         'date': latest.get('date', 'N/A'),
-        'expected_return': latest.get('expected_return', 0.0),
-        'risk_penalty': latest.get('risk_penalty', 0.0),
-        'quality_score': latest.get('quality_score', 0.0),
-        'shrek_score': latest.get('shrek_score', 0.0),
-        'upside_downside': latest.get('upside_downside', 0.0),
-        'current_price_at_research': latest.get('current_price', 0.0),
+        'expected_return': safe_float(latest.get('expected_return', 0.0)),
+        'risk_penalty': safe_float(latest.get('risk_penalty', 0.0)),
+        'quality_score': safe_float(latest.get('quality_score', 0.0)),
+        'shrek_score': safe_float(latest.get('shrek_score', 0.0)),
+        'upside_downside': safe_float(latest.get('upside_downside', 0.0)),
+        'current_price_at_research': safe_float(latest.get('current_price', 0.0)),
     }
 
 
 def lightweight_research(symbol: str, position: dict, storage_manager: StorageManager, llm_client: LLMClient):
     """Run lightweight research on a single position"""
+    symbol = normalize_symbol(symbol)
     logger.info(f"Lightweight research for {symbol}")
     
     # Load last full decision
@@ -98,10 +121,18 @@ def lightweight_research(symbol: str, position: dict, storage_manager: StorageMa
     alpaca_data = AlpacaDataSource()
     try:
         quote = alpaca_data.get_latest_quote(symbol)
-        current_price = (quote['bid'] + quote['ask']) / 2
+        bid = safe_float(quote.get('bid'))
+        ask = safe_float(quote.get('ask'))
+        current_price = (bid + ask) / 2 if bid > 0 and ask > 0 else 0.0
+        if current_price <= 0:
+            raise ValueError(f"Invalid quote: bid={bid}, ask={ask}")
     except Exception as e:
         logger.warning(f"Could not get quote for {symbol}: {e}")
-        current_price = position['current_price']
+        current_price = safe_float(position.get('current_price'))
+    
+    entry_price = safe_float(position.get('avg_entry_price'))
+    market_value = safe_float(position.get('market_value'))
+    unrealized_pnl = safe_float(position.get('unrealized_plpc'))
     
     # Fetch recent news only (last 7 days, lightweight)
     data_source_manager = DataSourceManager(Path('data'))
@@ -119,9 +150,9 @@ def lightweight_research(symbol: str, position: dict, storage_manager: StorageMa
     prompt = PORTFOLIO_RESEARCH_PROMPT.format(
         symbol=symbol,
         current_price=current_price,
-        entry_price=position['avg_entry_price'],
-        unrealized_pnl=position['unrealized_plpc'],
-        market_value=position['market_value'],
+        entry_price=entry_price,
+        unrealized_pnl=unrealized_pnl,
+        market_value=market_value,
         last_decision=last_decision['decision'],
         last_date=last_decision['date'],
         expected_return=last_decision['expected_return'],
@@ -133,8 +164,9 @@ def lightweight_research(symbol: str, position: dict, storage_manager: StorageMa
     # Run lightweight LLM check
     try:
         response = llm_client.generate(prompt, require_json=True, max_tokens=800)
-        import json
-        assessment = json.loads(response)
+        assessment = json.loads(response) if isinstance(response, str) else response
+        if not isinstance(assessment, dict):
+            raise ValueError(f"Expected JSON object, got {type(assessment).__name__}")
     except Exception as e:
         logger.error(f"LLM assessment failed for {symbol}: {e}")
         return None
@@ -144,10 +176,17 @@ def lightweight_research(symbol: str, position: dict, storage_manager: StorageMa
     assessment['last_decision'] = last_decision['decision']
     assessment['last_date'] = last_decision['date']
     
+    assessment['assessment'] = normalize_assessment(assessment.get('assessment'))
+    assessment['confidence'] = max(0.0, min(1.0, safe_float(assessment.get('confidence'), default=0.0)))
+    assessment['thesis_intact'] = bool(assessment.get('thesis_intact', True))
+    assessment.setdefault('reasoning', '')
+    assessment.setdefault('material_events', [])
+    assessment.setdefault('price_action_concern', 'none')
+    
     logger.info(
         f"{symbol}: assessment={assessment['assessment']}, "
-        f"confidence={assessment.get('confidence', 0):.2f}, "
-        f"thesis_intact={assessment.get('thesis_intact', True)}"
+        f"confidence={assessment['confidence']:.2f}, "
+        f"thesis_intact={assessment['thesis_intact']}"
     )
     
     # If assessment says RESEARCH, trigger a full research
@@ -166,7 +205,7 @@ def lightweight_research(symbol: str, position: dict, storage_manager: StorageMa
         
         # Update stored decision
         decisions = storage_manager.get_decisions(symbol=symbol)
-        if len(decisions) > 0:
+        if decisions is not None and len(decisions) > 0:
             latest = decisions.sort_values('date', ascending=False).iloc[0]
             updated_decision = latest.to_dict()
             updated_decision['decision'] = assessment['assessment']
@@ -184,6 +223,8 @@ def main():
     parser.add_argument('--force-full', action='store_true', help='Trigger full research instead of lightweight')
     args = parser.parse_args()
     
+    args.watchlist = [normalize_symbol(symbol) for symbol in args.watchlist]
+    
     load_env()
     config = load_config()
     llm_config = get_llm_config()
@@ -198,10 +239,10 @@ def main():
         logger.error(f"Could not fetch positions: {e}")
         positions = []
     
-    portfolio_symbols = [p['symbol'] for p in positions]
+    portfolio_symbols = [normalize_symbol(p.get('symbol')) for p in positions if p.get('symbol')]
     
     # Add watchlist
-    all_symbols = list(set(portfolio_symbols + args.watchlist))
+    all_symbols = sorted(set(portfolio_symbols + args.watchlist))
     
     if not all_symbols:
         logger.info("No positions or watchlist symbols to research")
@@ -222,7 +263,7 @@ def main():
     
     for symbol in all_symbols:
         # Find position data if it exists
-        position = next((p for p in positions if p['symbol'] == symbol), None)
+        position = next((p for p in positions if normalize_symbol(p.get('symbol')) == symbol), None)
         
         if position is None:
             # Watchlist symbol without a position
@@ -246,7 +287,8 @@ def main():
         else:
             try:
                 result = lightweight_research(symbol, position, storage_manager, llm_client)
-                results.append(result)
+                if result is not None:
+                    results.append(result)
             except Exception as e:
                 logger.error(f"Lightweight research failed for {symbol}: {e}")
                 results.append({"symbol": symbol, "action": "failed", "error": str(e)})
@@ -260,7 +302,7 @@ def main():
     if sell_trim:
         logger.info(f"SELL/TRIM signals: {len(sell_trim)}")
         for r in sell_trim:
-            logger.info(f"  {r['symbol']}: {r['assessment']} (confidence: {r.get('confidence', 0):.2f})")
+            logger.info(f"  {r['symbol']}: {r['assessment']} (confidence: {safe_float(r.get('confidence')):.2f})")
     
     if full_research:
         logger.info(f"Full research triggered: {len(full_research)}")

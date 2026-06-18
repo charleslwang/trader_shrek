@@ -8,15 +8,12 @@ from pathlib import Path
 from datetime import datetime
 from loguru import logger
 
-# Add parent directory to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# Add project python directory to path when running this script directly
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from shrek_ai.config import load_config, load_env, get_llm_config
+from shrek_ai.config import load_config, load_env
 from shrek_ai.alpaca_data import AlpacaDataSource
-from shrek_ai.alpaca_account import AlpacaAccount
-from shrek_ai.sec_edgar import SECEdgar
 from shrek_ai.filings import FilingManager
-from shrek_ai.fundamentals import FundamentalsProcessor
 from shrek_ai.data_sources import DataSourceManager
 from shrek_ai.agents import (
     FilingAnalyst,
@@ -36,18 +33,12 @@ from shrek_ai.math import (
     upside,
     upside_downside_ratio,
     margin_of_safety,
-    business_quality_score,
     piotroski_score,
     revision_score,
     timing_score,
     risk_penalty,
     shrek_score,
-    logit_to_probability,
     update_scenario_probabilities,
-    bayesian_thesis_update,
-    apply_evidence_event,
-    investability_gate,
-    entry_decision,
 )
 
 
@@ -55,16 +46,13 @@ def research_company(symbol: str):
     """Research a single company"""
     load_env()
     config = load_config()
-    llm_config = get_llm_config()
+    symbol = symbol.upper().strip()
     
     logger.info(f"Researching {symbol}")
     
     # Initialize components
     alpaca_data = AlpacaDataSource()
-    alpaca_account = AlpacaAccount()
-    edgar = SECEdgar()
     filing_manager = FilingManager(Path('data/filings'))
-    fundamentals_processor = FundamentalsProcessor()
     memory_system = MemorySystem(Path('data/memory'), config=config.memory)
     storage_manager = StorageManager(Path('data/storage'))
     data_source_manager = DataSourceManager(Path('data'))
@@ -119,7 +107,11 @@ def research_company(symbol: str):
     
     # Get current price
     quote = alpaca_data.get_latest_quote(symbol)
-    current_price = (quote['bid'] + quote['ask']) / 2
+    bid = float(quote['bid'])
+    ask = float(quote['ask'])
+    current_price = (bid + ask) / 2
+    if current_price <= 0:
+        raise ValueError(f"Invalid current price for {symbol}: bid={bid}, ask={ask}")
     
     # Get price history for timing
     bars = alpaca_data.get_bars(symbol, timeframe='day', limit=252)
@@ -147,6 +139,8 @@ def research_company(symbol: str):
         'alternative_signals': additional_context['alternative_signals'][:5],
     }
     
+    filing_analysis = None
+    thesis_events = []
     # Run filing analysis (with transcripts and news as additional context)
     if tenk:
         filing_analysis = filing_analyst.analyze_filing(
@@ -229,7 +223,7 @@ def research_company(symbol: str):
     
     # Calculate mathematical scores
     # Extract scores from LLM analyses where available, else use neutral defaults
-    def _safe_get(d: dict, *keys, default=0.5):
+    def _safe_score(d: dict, *keys, default=0.5):
         for k in keys:
             if isinstance(d, dict) and k in d:
                 v = d[k]
@@ -238,49 +232,58 @@ def research_company(symbol: str):
             d = d.get(k, {}) if isinstance(d, dict) else {}
         return default
 
+    def _safe_float(d: dict, *keys, default=0.0):
+        for k in keys:
+            if isinstance(d, dict) and k in d:
+                v = d[k]
+                if isinstance(v, (int, float)):
+                    return float(v)
+            d = d.get(k, {}) if isinstance(d, dict) else {}
+        return default
+
     # Quality: try filing_analysis -> quality_metrics, else neutral
-    quality = _safe_get(
+    quality = _safe_score(
         filing_analysis or {}, 'quality_metrics', 'overall', default=0.65
     ) if filing_analysis else 0.65
 
     # Revision: try earnings_analysis, else neutral
     revision = revision_score(
-        earnings_surprise=_safe_get(earnings_analysis or {}, 'earnings_surprise_score', default=0.5),
-        guidance_revision=_safe_get(earnings_analysis or {}, 'guidance_revision_score', default=0.5),
-        revenue_acceleration=_safe_get(earnings_analysis or {}, 'revenue_acceleration_score', default=0.5),
-        margin_revision=_safe_get(earnings_analysis or {}, 'margin_revision_score', default=0.5),
-        llm_event=_safe_get(filing_analysis or {}, 'event_score', default=0.5),
+        earnings_surprise=_safe_score(earnings_analysis or {}, 'earnings_surprise_score', default=0.5),
+        guidance_revision=_safe_score(earnings_analysis or {}, 'guidance_revision_score', default=0.5),
+        revenue_acceleration=_safe_score(earnings_analysis or {}, 'revenue_acceleration_score', default=0.5),
+        margin_revision=_safe_score(earnings_analysis or {}, 'margin_revision_score', default=0.5),
+        llm_event=_safe_score(filing_analysis or {}, 'event_score', default=0.5),
     )
 
     # Timing: try timing_analysis, else neutral
     timing = timing_score(
-        trend_200d=_safe_get(timing_analysis or {}, 'trend_200d_score', default=0.5),
-        trend_50d=_safe_get(timing_analysis or {}, 'trend_50d_score', default=0.5),
-        relative_strength=_safe_get(timing_analysis or {}, 'relative_strength_score', default=0.5),
-        pullback_quality=_safe_get(timing_analysis or {}, 'pullback_quality_score', default=0.5),
-        volume_confirmation=_safe_get(timing_analysis or {}, 'volume_confirmation_score', default=0.5),
+        trend_200d=_safe_score(timing_analysis or {}, 'trend_200d_score', default=0.5),
+        trend_50d=_safe_score(timing_analysis or {}, 'trend_50d_score', default=0.5),
+        relative_strength=_safe_score(timing_analysis or {}, 'relative_strength_score', default=0.5),
+        pullback_quality=_safe_score(timing_analysis or {}, 'pullback_quality_score', default=0.5),
+        volume_confirmation=_safe_score(timing_analysis or {}, 'volume_confirmation_score', default=0.5),
     )
 
     # Risk: try risk_analysis, else neutral
     risk_pen = risk_penalty(
-        balance_sheet_risk=_safe_get(risk_analysis or {}, 'balance_sheet_risk', default=0.3),
-        valuation_risk=_safe_get(risk_analysis or {}, 'valuation_risk', default=0.3),
-        dilution_risk=_safe_get(risk_analysis or {}, 'dilution_risk', default=0.2),
-        volatility_risk=_safe_get(risk_analysis or {}, 'volatility_risk', default=0.3),
-        thesis_fragility=_safe_get(risk_analysis or {}, 'thesis_fragility', default=0.2),
-        accounting_risk=_safe_get(risk_analysis or {}, 'accounting_risk', default=0.1),
-        llm_red_flag_risk=_safe_get(risk_analysis or {}, 'llm_red_flag_risk', default=0.1),
+        balance_sheet_risk=_safe_score(risk_analysis or {}, 'balance_sheet_risk', default=0.3),
+        valuation_risk=_safe_score(risk_analysis or {}, 'valuation_risk', default=0.3),
+        dilution_risk=_safe_score(risk_analysis or {}, 'dilution_risk', default=0.2),
+        volatility_risk=_safe_score(risk_analysis or {}, 'volatility_risk', default=0.3),
+        thesis_fragility=_safe_score(risk_analysis or {}, 'thesis_fragility', default=0.2),
+        accounting_risk=_safe_score(risk_analysis or {}, 'accounting_risk', default=0.1),
+        llm_red_flag_risk=_safe_score(risk_analysis or {}, 'llm_red_flag_risk', default=0.1),
     )
 
-    # Piotroski: try filing_analysis, else neutral
-    raw_f_score = _safe_get(filing_analysis or {}, 'piotroski_f_score', default=7)
-    piotroski = piotroski_score(int(raw_f_score * 9))  # reverse-normalize
+    # Piotroski: accept raw 0-9 F-score if present, else neutral/high-quality default
+    raw_f_score = _safe_float(filing_analysis or {}, 'piotroski_f_score', default=7.0)
+    piotroski = piotroski_score(int(max(0, min(9, round(raw_f_score)))))
 
     # Thesis probability: start at 0.70, adjust based on evidence
     thesis_probability = 0.70
     if earnings_analysis:
         # Boost/cut based on earnings surprise and guidance
-        earnings_surprise = _safe_get(earnings_analysis, 'earnings_surprise_score', default=0.5)
+        earnings_surprise = _safe_score(earnings_analysis, 'earnings_surprise_score', default=0.5)
         guidance_stance = earnings_analysis.get('guidance_stance', 'neutral') if isinstance(earnings_analysis, dict) else 'neutral'
         if guidance_stance in ['strong raise', 'moderate raise']:
             thesis_probability = min(0.95, thesis_probability + 0.10)
@@ -306,15 +309,19 @@ def research_company(symbol: str):
     ud_ratio = upside_downside_ratio(up, down)
     mos = margin_of_safety(v_base, current_price)
     
-    # Extract secular conviction from filing analysis
-    secular_conviction = 0.0
-    if filing_analysis and 'secular_thesis' in filing_analysis:
-        secular_conviction = filing_analysis['secular_thesis'].get('secular_conviction_score', 0.0)
-    
-    # Extract narrative conviction from valuation analysis
-    narrative_conviction = 0.0
-    if valuation_analysis and 'narrative_valuation' in valuation_analysis:
-        narrative_conviction = valuation_analysis['narrative_valuation'].get('narrative_conviction_score', 0.0)
+    # Extract conviction scores from analyses
+    secular_conviction = _safe_score(
+        filing_analysis or {},
+        'secular_thesis',
+        'secular_conviction_score',
+        default=0.0,
+    )
+    narrative_conviction = _safe_score(
+        valuation_analysis or {},
+        'narrative_valuation',
+        'narrative_conviction_score',
+        default=0.0,
+    )
     
     shrek = shrek_score(
         expected_return_score=min(1.0, max(0.0, (exp_return - 0.05) / 0.35)),
@@ -456,7 +463,7 @@ Filing Analysis: {filing_analysis if tenk else 'Not available'}
         'timing_score': timing,
         'risk_penalty': risk_pen,
         'shrek_score': shrek,
-        'decision': decision.get('decision', 'AVOID'),
+        'decision': str(decision.get('decision', 'AVOID')).upper(),
         'notional': 0.0,
         'order_sent': False,
         'rust_accept': False,
@@ -475,7 +482,12 @@ Filing Analysis: {filing_analysis if tenk else 'Not available'}
     
     logger.info(f"Research complete for {symbol}: {decision.get('decision')}")
     if decision.get('multi_agent'):
-        logger.info(f"Multi-agent decision: consensus={decision.get('consensus_score'):.2f}, rounds={decision.get('debate_rounds')}")
+        consensus_score = decision.get('consensus_score')
+        consensus_text = f"{consensus_score:.2f}" if isinstance(consensus_score, (int, float)) else "n/a"
+        logger.info(
+            f"Multi-agent decision: consensus={consensus_text}, "
+            f"rounds={decision.get('debate_rounds', 'n/a')}"
+        )
     
     return decision
 

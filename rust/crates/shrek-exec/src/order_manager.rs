@@ -1,19 +1,9 @@
 use anyhow::{Context, Result};
 use shrek_core::*;
-use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
-use crate::state::AppState;
-
-/// Active order tracking
-struct ActiveOrder {
-    decision_id: Uuid,
-    client_order_id: String,
-    symbol: String,
-    submitted_at: DateTime<Utc>,
-    timeout_minutes: i64,
-}
+use crate::{db, state::AppState};
 
 /// Submit an order to Alpaca
 pub async fn submit_order(
@@ -22,13 +12,12 @@ pub async fn submit_order(
 ) -> Result<String> {
     info!("Submitting order: {} {} notional={}", proposal.side, proposal.symbol, proposal.notional);
 
-    // Generate client order ID
     let client_order_id = format!("shrek-{}", Uuid::new_v4());
 
     // Submit to Alpaca
-    let alpaca_order_id = state
+    let broker_order_id = state
         .alpaca_client
-        .submit_order(proposal)
+        .submit_order(proposal, &client_order_id)
         .await
         .context("Failed to submit order to Alpaca")?;
 
@@ -37,6 +26,7 @@ pub async fn submit_order(
         id: Uuid::new_v4(),
         decision_id: proposal.decision_id,
         client_order_id: client_order_id.clone(),
+        broker_order_id: Some(broker_order_id.clone()),
         symbol: proposal.symbol.clone(),
         side: proposal.side,
         order_type: proposal.order_type,
@@ -50,11 +40,8 @@ pub async fn submit_order(
 
     db::log_order_event(&state.db_pool, &event).await?;
 
-    // Store in active orders (in-memory for now, could use Redis)
-    // This would be stored in a proper state management system
-
-    info!("Order submitted successfully: {}", alpaca_order_id);
-    Ok(alpaca_order_id)
+    info!("Order submitted successfully: client_order_id={}, broker_order_id={}", client_order_id, broker_order_id);
+    Ok(broker_order_id)
 }
 
 /// Cancel all active orders
@@ -106,11 +93,21 @@ async fn check_order_timeouts(state: &AppState) -> Result<()> {
         let timeout_minutes = state.config.orders.order_timeout_minutes as i64;
 
         if elapsed.num_minutes() > timeout_minutes {
-            warn!("Order {} timed out after {} minutes", order.client_order_id, elapsed.num_minutes());
+            let cancel_order_id = order
+                .broker_order_id
+                .as_deref()
+                .unwrap_or(order.client_order_id.as_str());
+
+            warn!(
+                "Order {} timed out after {} minutes; canceling broker_order_id={}",
+                order.client_order_id,
+                elapsed.num_minutes(),
+                cancel_order_id,
+            );
             
             // Cancel the order
-            if let Err(e) = state.alpaca_client.cancel_order(&order.client_order_id).await {
-                error!("Failed to cancel timed out order {}: {}", order.client_order_id, e);
+            if let Err(e) = state.alpaca_client.cancel_order(cancel_order_id).await {
+                error!("Failed to cancel timed out order {}: {}", cancel_order_id, e);
             }
         }
     }

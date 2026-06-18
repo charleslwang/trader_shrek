@@ -6,11 +6,10 @@ import sys
 import uuid
 import requests
 from pathlib import Path
-from datetime import datetime
 from loguru import logger
 
-# Add parent directory to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# Add project python directory to path when running this script directly
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from shrek_ai.config import load_config, load_env
 from shrek_ai.storage import StorageManager
@@ -81,6 +80,7 @@ class RustExecutor:
             json=payload,
             timeout=30,
         )
+        response.raise_for_status()
         
         return response.json()
     
@@ -90,6 +90,7 @@ class RustExecutor:
             f"{self.base_url}/orders/cancel_all",
             timeout=30,
         )
+        response.raise_for_status()
         return response.json()
     
     def refresh_positions(self) -> dict:
@@ -98,6 +99,7 @@ class RustExecutor:
             f"{self.base_url}/positions/refresh",
             timeout=30,
         )
+        response.raise_for_status()
         return response.json()
 
 
@@ -120,7 +122,7 @@ def main():
     
     # Get account info
     account = alpaca_account.get_account()
-    equity = account['equity']
+    equity = float(account['equity'])
     
     logger.info(f"Account equity: ${equity:,.2f}")
     
@@ -157,7 +159,9 @@ def main():
         # Get current price
         try:
             quote = alpaca_account.api.get_latest_quote(symbol)
-            current_price = (quote.ap + quote.bp) / 2
+            ask_price = float(quote.ap)
+            bid_price = float(quote.bp)
+            current_price = (ask_price + bid_price) / 2
         except Exception as e:
             logger.warning(f"Could not get quote for {symbol}: {e}, skipping")
             continue
@@ -168,11 +172,11 @@ def main():
             notional = starter_position_size(
                 equity=equity,
                 starter_position_pct=config.portfolio.starter_position_pct,
-                expected_return=decision['expected_return'],
-                quality=decision['quality_score'],
-                risk_penalty=decision['risk_penalty'],
-                thesis_probability=decision['thesis_probability'],
-                upside_downside=decision['upside_downside'],
+                expected_return=float(decision['expected_return']),
+                quality=float(decision['quality_score']),
+                risk_penalty=float(decision['risk_penalty']),
+                thesis_probability=float(decision['thesis_probability']),
+                upside_downside=float(decision['upside_downside']),
             )
             
             # For conviction buys, consider larger starter if thesis is strong
@@ -196,7 +200,7 @@ def main():
                 logger.warning(f"ADD decision for {symbol} but no position exists, skipping")
                 continue
             
-            current_position_value = position['market_value']
+            current_position_value = float(position['market_value'])
             target_position_value = equity * config.portfolio.normal_position_pct
             
             notional = add_position_size(
@@ -221,8 +225,10 @@ def main():
             
             sells_sent += 1
             
-            # Sell entire position for SELL, or use notional if specified
-            notional = position['market_value'] if decision_type == 'SELL' else decision.get('notional', position['market_value'] * 0.5)
+            position_market_value = float(position['market_value'])
+            raw_trim_notional = decision.get('notional')
+            trim_notional = float(raw_trim_notional) if raw_trim_notional is not None and raw_trim_notional == raw_trim_notional else position_market_value * 0.5
+            notional = position_market_value if decision_type == 'SELL' else trim_notional
             side = "sell"
             limit_price = current_price * (1 + config.orders.limit_sell_premium_bps / 10000)
         
@@ -245,7 +251,12 @@ def main():
             )
             
             if response.get('status') == 'accepted':
-                logger.info(f"Order accepted for {symbol}: {response.get('order_id')}")
+                logger.info(
+                    f"Order accepted for {symbol}: "
+                    f"order_id={response.get('order_id')}, "
+                    f"client_order_id={response.get('client_order_id')}, "
+                    f"broker_order_id={response.get('broker_order_id')}"
+                )
                 orders_sent += 1
                 
                 # Update decision in storage

@@ -1,14 +1,15 @@
 use anyhow::{Context, Result};
+use chrono::{DateTime, Utc};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use shrek_core::{TradingMode, *};
-use std::sync::Arc;
 use tracing::{debug, info, warn};
 
 #[derive(Debug, Serialize)]
 struct AlpacaOrderRequest {
     symbol: String,
     side: String,
+    client_order_id: String,
     #[serde(rename = "type")]
     order_type: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -94,10 +95,15 @@ impl AlpacaClient {
     pub async fn submit_order(
         &self,
         proposal: &OrderProposal,
+        client_order_id: &str,
     ) -> Result<String> {
         if self.mode == TradingMode::DryRun {
-            info!("Dry-run mode: would submit order for {}", proposal.symbol);
-            return Ok("dry-run-order-id".to_string());
+            info!(
+                "Dry-run mode: would submit order for {} with client_order_id={}",
+                proposal.symbol,
+                client_order_id,
+            );
+            return Ok(format!("dry-run-{}", client_order_id));
         }
 
         let order_type_str = match proposal.order_type {
@@ -117,13 +123,25 @@ impl AlpacaClient {
             TimeInForce::Fok => "fok",
         };
 
-        let mut request = AlpacaOrderRequest {
+        let (qty, notional) = match proposal.order_type {
+            OrderType::Limit => {
+                let limit_price = proposal
+                    .limit_price
+                    .context("Limit orders require a limit_price before Alpaca submission")?;
+                let quantity = proposal.notional / limit_price;
+                (Some(quantity.round_dp(6).to_string()), None)
+            }
+            OrderType::Market => (None, Some(proposal.notional.to_string())),
+        };
+
+        let request = AlpacaOrderRequest {
             symbol: proposal.symbol.clone(),
             side: side_str.to_string(),
+            client_order_id: client_order_id.to_string(),
             order_type: order_type_str.to_string(),
             limit_price: proposal.limit_price.map(|p| p.to_string()),
-            qty: None,
-            notional: Some(proposal.notional.to_string()),
+            qty,
+            notional,
             time_in_force: tif_str.to_string(),
         };
 
@@ -149,7 +167,11 @@ impl AlpacaClient {
             .await
             .context("Failed to parse Alpaca order response")?;
 
-        info!("Order submitted to Alpaca: {}", alpaca_response.id);
+        info!(
+            "Order submitted to Alpaca: broker_order_id={}, client_order_id={}",
+            alpaca_response.id,
+            alpaca_response.client_order_id,
+        );
         Ok(alpaca_response.id)
     }
 
@@ -171,7 +193,9 @@ impl AlpacaClient {
             .context("Failed to cancel order")?;
 
         if !response.status().is_success() {
-            warn!("Failed to cancel order {}: status {}", order_id, response.status());
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            warn!("Failed to cancel order {}: status {}, body={}", order_id, status, error_text);
         }
 
         Ok(())
@@ -197,6 +221,9 @@ impl AlpacaClient {
         if response.status().is_success() {
             Ok(0) // Alpaca doesn't return count in delete response
         } else {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            warn!("Failed to cancel all orders: status {}, body={}", status, error_text);
             Ok(0)
         }
     }

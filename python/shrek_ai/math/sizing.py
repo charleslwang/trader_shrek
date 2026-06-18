@@ -107,11 +107,11 @@ def starter_position_size(
     upside_downside: float,
     volatility: float = 0.25,
     risk_free_rate: float = 0.04,
-    kelly_fraction: float = 0.25,
+    kelly_scale: float = 0.25,
 ) -> float:
     """
     Calculate starter position size.
-    
+
     Args:
         equity: Total equity
         starter_position_pct: Starter position as percentage of equity
@@ -122,19 +122,29 @@ def starter_position_size(
         upside_downside: Upside/downside ratio
         volatility: Volatility
         risk_free_rate: Risk-free rate
-        kelly_fraction: Kelly fraction to use
-    
+        kelly_scale: Fraction of full Kelly to apply
+
     Returns:
         Position notional
     """
     # Calculate Kelly-based size
-    kelly = kelly_fraction(expected_return, volatility, risk_free_rate)
-    adjusted = adjust_kelly_for_risk(kelly, thesis_probability, risk_penalty, upside_downside)
+    full_kelly = kelly_fraction(expected_return, volatility, risk_free_rate)
+    scaled_kelly = fractional_kelly(full_kelly, fraction=kelly_scale)
+    adjusted = adjust_kelly_for_risk(
+        scaled_kelly,
+        thesis_probability,
+        risk_penalty,
+        upside_downside,
+    )
+
+    quality_factor = max(0.0, min(1.0, quality))
+    adjusted *= quality_factor
+
     kelly_size = position_size(adjusted, equity, starter_position_pct)
-    
+
     # Use the larger of Kelly-based or fixed starter size
     fixed_size = equity * starter_position_pct
-    
+
     return max(kelly_size, fixed_size)
 
 
@@ -158,5 +168,8 @@ def add_position_size(
     """
     max_add = equity * normal_position_pct
     needed = target_position_value - current_position_value
-    
+
+    if needed <= 0:
+        return 0.0
+
     return min(needed, max_add)

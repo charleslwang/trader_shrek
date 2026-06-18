@@ -41,8 +41,11 @@ async fn main() -> Result<()> {
     // Parse command line arguments
     let args: Vec<String> = env::args().collect();
     let config_path = args
-        .get(2)
-        .and_then(|s| s.strip_prefix("--config="))
+        .iter()
+        .position(|s| s == "--config")
+        .and_then(|idx| args.get(idx + 1))
+        .map(|s| s.as_str())
+        .or_else(|| args.iter().find_map(|s| s.strip_prefix("--config=")))
         .unwrap_or("config/shrek.paper.yaml");
     
     let is_dry_run = args.iter().any(|s| s == "--dry-run");

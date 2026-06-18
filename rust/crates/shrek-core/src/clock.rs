@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc, Timelike, TimeZone};
+use chrono::{DateTime, Utc, Timelike, TimeZone, Datelike};
 use chrono_tz::America::New_York;
 
 /// Check if current time is during regular market hours (9:30 AM - 4:00 PM ET)

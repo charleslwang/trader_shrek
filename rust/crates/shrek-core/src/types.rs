@@ -54,6 +54,7 @@ pub enum OrderStatus {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum AssetClass {
+    #[serde(rename = "us_equity")]
     UsEquity,
     Crypto,
 }
@@ -86,11 +87,12 @@ pub struct OrderEvent {
     pub id: Uuid,
     pub decision_id: Uuid,
     pub client_order_id: String,
+    pub broker_order_id: Option<String>,
     pub symbol: String,
     pub side: Side,
     pub order_type: OrderType,
     pub limit_price: Option<Decimal>,
-    pub quantity: Decimal,
+    pub quantity: Option<Decimal>,
     pub status: OrderStatus,
     pub filled_quantity: Decimal,
     pub filled_price: Option<Decimal>,

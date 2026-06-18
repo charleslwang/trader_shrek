@@ -3,17 +3,48 @@ Run daily research for all candidates
 """
 
 import sys
+import math
 import argparse
 from pathlib import Path
 from datetime import datetime
 from loguru import logger
 
-# Add parent directory to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# Add project python directory to path when running this script directly
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from shrek_ai.config import load_config, load_env
+from shrek_ai.config import load_env
 from shrek_ai.storage import StorageManager
-from shrek_ai.research_company import research_company
+from shrek_ai.scripts.research_company import research_company
+
+
+def normalize_symbol(symbol: str) -> str:
+    """Normalize ticker symbols from files, discovery, or storage."""
+    return str(symbol).upper().strip()
+
+
+def safe_float(value, default: float = 0.0) -> float:
+    """Convert model/storage values into finite floats."""
+    try:
+        parsed = float(value)
+        return parsed if math.isfinite(parsed) else default
+    except (TypeError, ValueError):
+        return default
+
+
+def read_candidates(path: Path) -> list[str]:
+    """Read, normalize, dedupe, and preserve order from candidates.txt."""
+    seen = set()
+    candidates = []
+    with open(path, 'r') as f:
+        for line in f:
+            stripped = line.strip()
+            if not stripped or stripped.startswith('#'):
+                continue
+            symbol = normalize_symbol(stripped)
+            if symbol and symbol not in seen:
+                seen.add(symbol)
+                candidates.append(symbol)
+    return candidates
 
 
 def main():
@@ -25,7 +56,6 @@ def main():
     args = parser.parse_args()
     
     load_env()
-    config = load_config()
     
     logger.info("Starting daily research")
     
@@ -36,23 +66,28 @@ def main():
         logger.error("Candidates file not found. Run build_universe first.")
         sys.exit(1)
     
-    with open(candidates_path, 'r') as f:
-        candidates = [line.strip() for line in f if line.strip() and not line.strip().startswith('#')]
+    candidates = read_candidates(candidates_path)
     
     logger.info(f"Base candidate list: {len(candidates)} symbols")
+    if not candidates:
+        logger.warning("Candidates file is empty; nothing to research unless discovery finds new symbols")
     
     # Check if research already done today
     storage_manager = StorageManager(Path('data/storage'))
     today = datetime.now().date().isoformat()
     
     existing_decisions = storage_manager.get_decisions(start_date=today, end_date=today)
-    already_researched = set(existing_decisions['symbol'].unique()) if len(existing_decisions) > 0 else set()
+    already_researched = (
+        {normalize_symbol(symbol) for symbol in existing_decisions['symbol'].dropna().unique()}
+        if existing_decisions is not None and len(existing_decisions) > 0 and 'symbol' in existing_decisions.columns
+        else set()
+    )
     
     if already_researched:
         logger.info(f"Found {len(already_researched)} symbols already researched today")
     
     # Track symbols to research (base + discovered)
-    symbols_to_research = candidates.copy()
+    symbols_to_research = list(candidates)
     
     # --- DISCOVERY MODE ---
     if args.discover:
@@ -62,7 +97,13 @@ def main():
         new_candidates = discovery.run_discovery(max_new_candidates=args.max_discovered)
         
         if new_candidates:
-            new_symbols = [c['symbol'] for c in new_candidates]
+            new_symbols = []
+            seen_new = set(symbols_to_research)
+            for candidate in new_candidates:
+                symbol = normalize_symbol(candidate.get('symbol', '')) if isinstance(candidate, dict) else normalize_symbol(candidate)
+                if symbol and symbol not in seen_new:
+                    seen_new.add(symbol)
+                    new_symbols.append(symbol)
             logger.info(f"Discovered {len(new_symbols)} new candidates: {new_symbols}")
             symbols_to_research.extend(new_symbols)
             
@@ -78,6 +119,9 @@ def main():
     research_results = {}
     
     for symbol in symbols_to_research:
+        symbol = normalize_symbol(symbol)
+        if not symbol:
+            continue
         if symbol in already_researched:
             logger.info(f"Skipping {symbol} (already researched today)")
             continue
@@ -85,8 +129,11 @@ def main():
         try:
             logger.info(f"Researching {symbol}")
             decision = research_company(symbol)
-            if decision:
+            if isinstance(decision, dict):
+                decision['symbol'] = normalize_symbol(decision.get('symbol', symbol))
                 research_results[symbol] = decision
+            else:
+                logger.warning(f"No structured decision returned for {symbol}")
         except Exception as e:
             logger.error(f"Failed to research {symbol}: {e}")
             continue
@@ -98,8 +145,8 @@ def main():
         for sym in discovered_symbols:
             if sym in research_results:
                 result = research_results[sym]
-                shrek = result.get('shrek_score', 0.0)
-                decision = result.get('decision', 'AVOID')
+                shrek = safe_float(result.get('shrek_score', 0.0))
+                decision = str(result.get('decision', 'AVOID')).upper()
                 
                 if shrek >= args.add_threshold and decision in ['BUY_STARTER', 'CONVICTION_BUY']:
                     logger.info(
@@ -116,7 +163,10 @@ def main():
         if symbols_to_add:
             discovery.add_to_candidates(symbols_to_add, reason="strong_research_signal")
     
-    logger.info("Daily research complete")
+    logger.info(
+        f"Daily research complete: researched={len(research_results)}, "
+        f"skipped_today={len(already_researched)}"
+    )
 
 
 if __name__ == '__main__':

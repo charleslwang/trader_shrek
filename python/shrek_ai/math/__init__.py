@@ -40,6 +40,8 @@ from .sizing import (
     fractional_kelly,
     adjust_kelly_for_risk,
     position_size,
+    starter_position_size,
+    add_position_size,
 )
 from .exits import (
     trim_decision,
@@ -93,6 +95,8 @@ __all__ = [
     'fractional_kelly',
     'adjust_kelly_for_risk',
     'position_size',
+    'starter_position_size',
+    'add_position_size',
     # Exits
     'trim_decision',
     'sell_decision',

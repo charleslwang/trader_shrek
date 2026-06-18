@@ -1,9 +1,9 @@
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use shrek_core::*;
-use sqlx::{SqlitePool, sqlite::SqliteQueryAs};
+use sqlx::SqlitePool;
 use uuid::Uuid;
-use tracing::{debug, error};
+use tracing::debug;
 
 /// Run database migrations
 pub async fn run_migrations(pool: &SqlitePool) -> Result<()> {
@@ -13,6 +13,7 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<()> {
             id TEXT PRIMARY KEY,
             decision_id TEXT NOT NULL,
             client_order_id TEXT NOT NULL,
+            broker_order_id TEXT,
             symbol TEXT NOT NULL,
             side TEXT NOT NULL,
             order_type TEXT NOT NULL,
@@ -97,6 +98,12 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<()> {
     .await
     .context("Failed to run database migrations")?;
 
+    // Backfill older local databases created before broker_order_id existed.
+    // SQLite returns an error if the column already exists, so this is intentionally ignored.
+    let _ = sqlx::query("ALTER TABLE order_events ADD COLUMN broker_order_id TEXT")
+        .execute(pool)
+        .await;
+
     debug!("Database migrations completed");
     Ok(())
 }
@@ -106,14 +113,15 @@ pub async fn log_order_event(pool: &SqlitePool, event: &OrderEvent) -> Result<()
     sqlx::query(
         r#"
         INSERT INTO order_events (
-            id, decision_id, client_order_id, symbol, side, order_type,
+            id, decision_id, client_order_id, broker_order_id, symbol, side, order_type,
             limit_price, quantity, status, filled_quantity, filled_price, timestamp
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         "#,
     )
     .bind(event.id.to_string())
     .bind(event.decision_id.to_string())
     .bind(&event.client_order_id)
+    .bind(&event.broker_order_id)
     .bind(&event.symbol)
     .bind(format!("{:?}", event.side))
     .bind(format!("{:?}", event.order_type))
@@ -205,9 +213,9 @@ pub async fn log_kill_switch(pool: &SqlitePool, event: &KillSwitchEvent) -> Resu
 
 /// Get active orders (not filled or cancelled)
 pub async fn get_active_orders(pool: &SqlitePool) -> Result<Vec<OrderEvent>> {
-    let rows = sqlx::query_as::<_, (String, String, String, String, String, String, Option<String>, Option<String>, String, String, Option<String>, String)>(
+    let rows = sqlx::query_as::<_, (String, String, String, Option<String>, String, String, String, Option<String>, Option<String>, String, String, Option<String>, String)>(
         r#"
-        SELECT id, decision_id, client_order_id, symbol, side, order_type,
+        SELECT id, decision_id, client_order_id, broker_order_id, symbol, side, order_type,
                limit_price, quantity, status, filled_quantity, filled_price, timestamp
         FROM order_events
         WHERE status IN ('New', 'PartiallyFilled')
@@ -220,11 +228,12 @@ pub async fn get_active_orders(pool: &SqlitePool) -> Result<Vec<OrderEvent>> {
 
     let orders = rows
         .into_iter()
-        .map(|(id, decision_id, client_order_id, symbol, side, order_type, limit_price, quantity, status, filled_quantity, filled_price, timestamp)| {
+        .map(|(id, decision_id, client_order_id, broker_order_id, symbol, side, order_type, limit_price, quantity, status, filled_quantity, filled_price, timestamp)| {
             OrderEvent {
                 id: Uuid::parse_str(&id).unwrap_or_default(),
                 decision_id: Uuid::parse_str(&decision_id).unwrap_or_default(),
                 client_order_id,
+                broker_order_id,
                 symbol,
                 side: match side.as_str() {
                     "Buy" => Side::Buy,
