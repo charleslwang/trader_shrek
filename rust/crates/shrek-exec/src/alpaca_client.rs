@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use reqwest::Client;
+use rust_decimal_macros::dec;
 use serde::{Deserialize, Serialize};
 use shrek_core::{TradingMode, *};
 use tracing::{debug, info, warn};
@@ -347,8 +348,8 @@ impl AlpacaClient {
         Ok(MarketClock {
             timestamp: Utc::now(),
             is_open: clock.is_open,
-            next_open: Some(DateTime::parse_from_rfc3339(&clock.next_open).ok()?.with_timezone(&Utc)),
-            next_close: Some(DateTime::parse_from_rfc3339(&clock.next_close).ok()?.with_timezone(&Utc)),
+            next_open: Some(DateTime::parse_from_rfc3339(&clock.next_open).context("Failed to parse next_open")?.with_timezone(&Utc)),
+            next_close: Some(DateTime::parse_from_rfc3339(&clock.next_close).context("Failed to parse next_close")?.with_timezone(&Utc)),
         })
     }
 }

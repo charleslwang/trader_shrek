@@ -6,6 +6,7 @@ use axum::{
     routing::{get, post},
     Router,
 };
+use chrono::Utc;
 use serde_json::json;
 use shrek_core::{TradingMode, *};
 use sqlx::SqlitePool;
@@ -14,6 +15,7 @@ use std::env;
 use tokio::net::TcpListener;
 use tracing::{error, info, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+use uuid::Uuid;
 
 mod api;
 mod alpaca_client;
@@ -165,11 +167,12 @@ async fn propose_order(
         Ok(_) => {
             // Submit order
             match order_manager::submit_order(&state, &proposal).await {
-                Ok(order_id) => {
-                    info!("Order submitted successfully: {}", order_id);
+                Ok((client_order_id, broker_order_id)) => {
+                    info!("Order submitted successfully: client_order_id={}, broker_order_id={}", client_order_id, broker_order_id);
                     Ok(Json(json!({
                         "status": "accepted",
-                        "order_id": order_id,
+                        "client_order_id": client_order_id,
+                        "broker_order_id": broker_order_id,
                         "decision_id": proposal.decision_id
                     })))
                 }

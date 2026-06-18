@@ -1,6 +1,6 @@
 use shrek_core::*;
 use sqlx::SqlitePool;
-use tracing::{debug, info};
+use tracing::debug;
 
 /// Log execution events
 pub async fn log_execution_event(

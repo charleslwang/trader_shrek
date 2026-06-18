@@ -1,4 +1,6 @@
 use anyhow::{Context, Result};
+use chrono::Utc;
+use rust_decimal_macros::dec;
 use shrek_core::*;
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
@@ -6,10 +8,11 @@ use uuid::Uuid;
 use crate::{db, state::AppState};
 
 /// Submit an order to Alpaca
+/// Returns (client_order_id, broker_order_id)
 pub async fn submit_order(
     state: &AppState,
     proposal: &OrderProposal,
-) -> Result<String> {
+) -> Result<(String, String)> {
     info!("Submitting order: {} {} notional={}", proposal.side, proposal.symbol, proposal.notional);
 
     let client_order_id = format!("shrek-{}", Uuid::new_v4());
@@ -41,7 +44,7 @@ pub async fn submit_order(
     db::log_order_event(&state.db_pool, &event).await?;
 
     info!("Order submitted successfully: client_order_id={}, broker_order_id={}", client_order_id, broker_order_id);
-    Ok(broker_order_id)
+    Ok((client_order_id, broker_order_id))
 }
 
 /// Cancel all active orders
