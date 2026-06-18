@@ -108,6 +108,8 @@ def starter_position_size(
     volatility: float = 0.25,
     risk_free_rate: float = 0.04,
     kelly_scale: float = 0.25,
+    conviction_boost: float = 1.0,
+    max_single_position_pct: Optional[float] = None,
 ) -> float:
     """
     Calculate starter position size.
@@ -123,6 +125,8 @@ def starter_position_size(
         volatility: Volatility
         risk_free_rate: Risk-free rate
         kelly_scale: Fraction of full Kelly to apply
+        conviction_boost: Multiplier for conviction buys (default 1.0)
+        max_single_position_pct: Hard cap on position size (default None)
 
     Returns:
         Position notional
@@ -145,7 +149,17 @@ def starter_position_size(
     # Use the larger of Kelly-based or fixed starter size
     fixed_size = equity * starter_position_pct
 
-    return max(kelly_size, fixed_size)
+    notional = max(kelly_size, fixed_size)
+
+    # Apply conviction boost
+    if conviction_boost != 1.0:
+        notional = notional * conviction_boost
+
+    # Apply hard cap if provided
+    if max_single_position_pct is not None:
+        notional = min(notional, equity * max_single_position_pct)
+
+    return notional
 
 
 def add_position_size(

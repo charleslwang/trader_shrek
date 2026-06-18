@@ -72,7 +72,7 @@ def test_multiple_valuation():
     value = multiple_valuation(metric, multiple, cash, debt, diluted_shares)
     
     assert value > 0
-    assert value < 200  # Sanity check
+    assert value < 2500  # Sanity check: (1B*20 + 50M - 30M)/10M ≈ $2002
 
 
 def test_expected_return():
@@ -95,19 +95,19 @@ def test_expected_return():
 
 def test_downside():
     """Test downside calculation"""
-    assert downside(80, 100) == 0.20
+    assert downside(80, 100) == pytest.approx(0.20)
     assert downside(120, 100) == 0.0
 
 
 def test_upside():
     """Test upside calculation"""
-    assert upside(120, 100) == 0.20
+    assert upside(120, 100) == pytest.approx(0.20)
     assert upside(80, 100) == 0.0
 
 
 def test_upside_downside_ratio():
     """Test upside/downside ratio"""
-    assert upside_downside_ratio(0.30, 0.10) == 3.0
+    assert upside_downside_ratio(0.30, 0.10) == pytest.approx(3.0)
     assert upside_downside_ratio(0.10, 0.30) == pytest.approx(0.333, rel=0.01)
 
 
@@ -220,7 +220,7 @@ def test_position_size():
 
 def test_drawdown():
     """Test drawdown calculation"""
-    assert drawdown(90, 100) == 0.10
+    assert drawdown(90, 100) == pytest.approx(0.10)
     assert drawdown(100, 100) == 0.0
 
 

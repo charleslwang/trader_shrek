@@ -3,8 +3,9 @@ use sqlx::SqlitePool;
 use tracing::debug;
 
 /// Log execution events
+#[allow(dead_code)]
 pub async fn log_execution_event(
-    pool: &SqlitePool,
+    _pool: &SqlitePool,
     event_type: &str,
     details: &str,
 ) -> anyhow::Result<()> {
@@ -17,6 +18,7 @@ pub async fn log_execution_event(
 }
 
 /// Get recent order events for a decision
+#[allow(dead_code)]
 pub async fn get_decision_events(
     pool: &SqlitePool,
     decision_id: uuid::Uuid,

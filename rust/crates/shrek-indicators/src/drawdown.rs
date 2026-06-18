@@ -1,5 +1,5 @@
 use rust_decimal::Decimal;
-use rust_decimal::prelude::*;
+use rust_decimal::prelude::ToPrimitive;
 use rust_decimal_macros::dec;
 
 /// Calculate drawdown from peak
@@ -73,7 +73,8 @@ pub fn drawdown_quantile(drawdowns: &[Decimal], quantile: Decimal) -> Decimal {
     let mut sorted = drawdowns.to_vec();
     sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
 
-    let index = ((sorted.len() as i64 - 1) * quantile).to_usize().unwrap();
+    let q = quantile.to_f64().unwrap_or(0.0).clamp(0.0, 1.0);
+    let index = (((sorted.len() - 1) as f64) * q).ceil() as usize;
     sorted[index]
 }
 

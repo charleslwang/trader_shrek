@@ -5,6 +5,7 @@ use rust_decimal_macros::dec;
 use serde::{Deserialize, Serialize};
 use shrek_core::{TradingMode, *};
 use tracing::{info, warn};
+use uuid::Uuid;
 
 #[derive(Debug, Serialize)]
 struct AlpacaOrderRequest {
@@ -24,6 +25,7 @@ struct AlpacaOrderRequest {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct AlpacaOrderResponse {
     id: String,
     client_order_id: String,
@@ -58,6 +60,7 @@ struct AlpacaAccount {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct AlpacaClock {
     timestamp: String,
     is_open: bool,

@@ -490,30 +490,63 @@ cargo build --release
 
 ```bash
 cd python
-pip install -e .
+pip install -e ".[dev]"
 ```
 
 ## Running Shrek
 
 ### Prerequisites
 
-1. Install dependencies:
+Run these from the repo root unless a command says otherwise.
+
+1. Install Python dependencies:
 ```bash
 cd python
-pip install -r requirements.txt
+pip install -e ".[dev]"
+cd ..
 ```
 
-2. Set up environment variables:
+2. Build the Rust executor:
+```bash
+cargo build --manifest-path rust/Cargo.toml
+```
+
+3. Set up environment variables:
 ```bash
 cp .env.example .env
 # Edit .env with your API keys
 ```
 
-3. Start Ollama (if using local LLM):
+4. Start Ollama (if using local LLM):
 ```bash
 ollama serve
 ollama pull deepseek-r1:8b
 ollama pull qwen3:8b
+```
+
+### Weekly Research And Daily Execution
+
+This is the intended low-touch operating loop.
+
+**Weekly research, run manually when you have time:**
+```bash
+./scripts/weekly_research.sh
+```
+
+This runs full research for `data/candidates.txt`, stores decisions in `data/storage/shrek_analytics.duckdb`, and writes a timestamped log under `data/logs/`.
+
+**Daily market-hours execution, one command:**
+```bash
+./scripts/daily_market_execute.sh --paper
+```
+
+By default, the daily script picks a random execution time between market open and `15:30` ET, sleeps until then, starts the Rust executor if needed, and executes orders from the latest stored research. Use `--now` to execute immediately during market hours.
+
+Useful variants:
+```bash
+./scripts/daily_market_execute.sh --dry-run
+./scripts/daily_market_execute.sh --paper --now
+SHREK_LATEST_RANDOM_START_ET=14:45 ./scripts/daily_market_execute.sh --paper
 ```
 
 ### Manual Daily Workflow
@@ -522,7 +555,7 @@ Shrek is designed for manual, intermittent execution. Research can be done at an
 
 **Research (run anytime - morning, afternoon, or evening):**
 ```bash
-cd python
+export PYTHONPATH="$PWD/python:${PYTHONPATH:-}"
 python -m shrek_ai.scripts.manual_daily_workflow --research
 ```
 
@@ -580,8 +613,7 @@ The Rust daemon handles:
 
 Start the Rust daemon (required for order execution):
 ```bash
-cd rust
-cargo run -p shrek-exec -- --config config/shrek.paper.yaml --paper
+cargo run --manifest-path rust/Cargo.toml -p shrek-exec -- --config config/shrek.paper.yaml --paper
 ```
 
 ### Additional Python Scripts
@@ -597,7 +629,10 @@ python -m shrek_ai.scripts.research_company AAPL
 python -m shrek_ai.scripts.run_daily_research
 
 # Backtest
-python -m shrek_ai.scripts.backtest_shrek
+python -m shrek_ai.scripts.backtest_shrek --start 2024-01-01 --end 2024-12-31 --symbols AAPL MSFT
+
+# Post-market review
+python -m shrek_ai.scripts.post_market_review
 ```
 
 ## Testing
@@ -606,7 +641,7 @@ python -m shrek_ai.scripts.backtest_shrek
 
 ```bash
 cd rust
-cargo test
+cargo test --workspace
 ```
 
 ### Python Tests

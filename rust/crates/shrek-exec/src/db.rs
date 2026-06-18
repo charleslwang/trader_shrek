@@ -87,6 +87,12 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<()> {
             triggered_by TEXT NOT NULL
         );
 
+        CREATE TABLE IF NOT EXISTS runtime_state (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+
         CREATE INDEX IF NOT EXISTS idx_order_events_decision_id ON order_events(decision_id);
         CREATE INDEX IF NOT EXISTS idx_order_events_timestamp ON order_events(timestamp);
         CREATE INDEX IF NOT EXISTS idx_order_proposals_decision_id ON order_proposals(decision_id);
@@ -103,6 +109,17 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<()> {
     let _ = sqlx::query("ALTER TABLE order_events ADD COLUMN broker_order_id TEXT")
         .execute(pool)
         .await;
+
+    sqlx::query(
+        r#"
+        INSERT OR IGNORE INTO runtime_state (key, value, updated_at)
+        VALUES ('kill_switch_active', 'false', ?)
+        "#,
+    )
+    .bind(Utc::now().to_rfc3339())
+    .execute(pool)
+    .await
+    .context("Failed to initialize runtime state")?;
 
     debug!("Database migrations completed");
     Ok(())
@@ -209,6 +226,38 @@ pub async fn log_kill_switch(pool: &SqlitePool, event: &KillSwitchEvent) -> Resu
 
     debug!("Logged kill switch event: {}", event.id);
     Ok(())
+}
+
+/// Persist kill-switch state.
+pub async fn set_kill_switch_active(pool: &SqlitePool, active: bool) -> Result<()> {
+    sqlx::query(
+        r#"
+        INSERT INTO runtime_state (key, value, updated_at)
+        VALUES ('kill_switch_active', ?, ?)
+        ON CONFLICT(key) DO UPDATE SET
+            value = excluded.value,
+            updated_at = excluded.updated_at
+        "#,
+    )
+    .bind(if active { "true" } else { "false" })
+    .bind(Utc::now().to_rfc3339())
+    .execute(pool)
+    .await
+    .context("Failed to update kill switch state")?;
+
+    Ok(())
+}
+
+/// Read persisted kill-switch state.
+pub async fn is_kill_switch_active(pool: &SqlitePool) -> Result<bool> {
+    let value: Option<String> = sqlx::query_scalar(
+        "SELECT value FROM runtime_state WHERE key = 'kill_switch_active'",
+    )
+    .fetch_optional(pool)
+    .await
+    .context("Failed to read kill switch state")?;
+
+    Ok(matches!(value.as_deref(), Some("true")))
 }
 
 /// Get active orders (not filled or cancelled)

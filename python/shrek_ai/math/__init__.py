@@ -14,6 +14,7 @@ from .valuation import (
 )
 from .quality import (
     piotroski_f_score,
+    piotroski_score,
     business_quality_score,
     revenue_growth_score,
     gross_margin_score,
@@ -47,6 +48,7 @@ from .exits import (
     trim_decision,
     sell_decision,
     forward_expected_return,
+    trim_amount,
 )
 from .drawdown import (
     drawdown,
@@ -72,6 +74,7 @@ __all__ = [
     'margin_of_safety',
     # Quality
     'piotroski_f_score',
+    'piotroski_score',
     'business_quality_score',
     'revenue_growth_score',
     'gross_margin_score',
@@ -101,6 +104,7 @@ __all__ = [
     'trim_decision',
     'sell_decision',
     'forward_expected_return',
+    'trim_amount',
     # Drawdown
     'drawdown',
     'max_drawdown',

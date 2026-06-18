@@ -171,9 +171,7 @@ class TranscriptFetcher:
             calendar_url = f"https://finance.yahoo.com/calendar/earnings?symbol={symbol}"
             calendar_html = self.extractor.fetch_url(calendar_url, retries=2, delay=1.0)
             
-            # For now, extract what we can from the analysis page
-            # Full transcript text is not available on Yahoo Finance directly
-            # but we can get earnings surprise data
+            # Extract earnings surprise and EPS estimate data from Yahoo Finance tables
             
             soup = BeautifulSoup(html, 'html.parser') if html else None
             

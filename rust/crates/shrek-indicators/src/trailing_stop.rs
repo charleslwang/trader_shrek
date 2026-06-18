@@ -1,5 +1,4 @@
 use rust_decimal::Decimal;
-use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
 
 /// Calculate trailing stop price based on percentage

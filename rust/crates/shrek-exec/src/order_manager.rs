@@ -13,7 +13,7 @@ pub async fn submit_order(
     state: &AppState,
     proposal: &OrderProposal,
 ) -> Result<(String, String)> {
-    info!("Submitting order: {} {} notional={}", proposal.side, proposal.symbol, proposal.notional);
+    info!("Submitting order: {:?} {} notional={}", proposal.side, proposal.symbol, proposal.notional);
 
     let client_order_id = format!("shrek-{}", Uuid::new_v4());
 
@@ -58,6 +58,7 @@ pub async fn cancel_all_orders(state: &AppState) -> Result<usize> {
 }
 
 /// Cancel a specific order
+#[allow(dead_code)]
 pub async fn cancel_order(state: &AppState, order_id: &str) -> Result<()> {
     info!("Canceling order: {}", order_id);
 

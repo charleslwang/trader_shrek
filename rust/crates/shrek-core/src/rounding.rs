@@ -1,11 +1,11 @@
 use rust_decimal::Decimal;
-use rust_decimal::prelude::*;
+use rust_decimal::RoundingStrategy;
 use rust_decimal_macros::dec;
 
 /// Round limit price to appropriate precision for US equities
 /// US equities typically use 2 decimal places (cents)
 pub fn round_limit_price(price: Decimal) -> Decimal {
-    price.round_dp(2)
+    price.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero)
 }
 
 /// Round quantity to appropriate precision for fractional shares
@@ -16,7 +16,7 @@ pub fn round_quantity(quantity: Decimal) -> Decimal {
 
 /// Round notional to cents
 pub fn round_notional(notional: Decimal) -> Decimal {
-    notional.round_dp(2)
+    notional.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero)
 }
 
 /// Apply limit buy discount (in basis points)

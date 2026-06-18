@@ -1,5 +1,4 @@
 use rust_decimal::Decimal;
-use rust_decimal::prelude::*;
 use std::str::FromStr;
 
 /// Calculate expected return from valuation scenarios

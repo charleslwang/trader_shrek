@@ -112,11 +112,12 @@ def main():
     parser.add_argument('--portfolio', action='store_true', help='Lightweight portfolio research + execute (daily)')
     parser.add_argument('--execute', action='store_true', help='Execute orders only')
     parser.add_argument('--status', action='store_true', help='Show status only')
+    parser.add_argument('--full', action='store_true', help='Run full research, then execute orders')
     
     args = parser.parse_args()
     
     # Default to portfolio mode if no args (daily routine)
-    if not any([args.research, args.portfolio, args.execute, args.status]):
+    if not any([args.research, args.portfolio, args.execute, args.status, args.full]):
         args.portfolio = True
     
     if args.status:
@@ -127,6 +128,9 @@ def main():
         run_portfolio_research()
         execute_orders()
     elif args.execute:
+        execute_orders()
+    elif args.full:
+        run_full_research()
         execute_orders()
 
 

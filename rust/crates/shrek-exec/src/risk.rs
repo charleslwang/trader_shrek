@@ -2,6 +2,7 @@ use anyhow::{bail, Result};
 use rust_decimal_macros::dec;
 use shrek_core::*;
 use tracing::debug;
+use crate::db;
 use crate::state::AppState;
 
 /// Validate an order proposal against risk rules
@@ -80,7 +81,7 @@ pub async fn validate_order(
 
 /// Check if kill switch is active
 pub async fn is_kill_switch_active(state: &AppState) -> bool {
-    // This would check a persistent flag in the database
-    // For now, always return false
-    false
+    db::is_kill_switch_active(&state.db_pool)
+        .await
+        .unwrap_or(true)
 }

@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 import json
 import math
+from dataclasses import asdict, is_dataclass
 from loguru import logger
 
 
@@ -23,6 +24,8 @@ class MemorySystem:
                 'intermediate_decay_days': 120,
                 'deep_decay_days': 1095,
             }
+        elif is_dataclass(config):
+            config = asdict(config)
         
         self.shallow_decay_days = config['shallow_decay_days']
         self.intermediate_decay_days = config['intermediate_decay_days']

@@ -6,6 +6,7 @@ import pytest
 from pathlib import Path
 from datetime import datetime, timedelta
 from shrek_ai.memory import MemorySystem
+from shrek_ai.config import MemoryConfig
 
 
 def test_add_memory(tmp_path):
@@ -23,6 +24,21 @@ def test_add_memory(tmp_path):
     
     assert memory_id is not None
     assert len(memory_id) > 0
+
+
+def test_memory_accepts_config_dataclass(tmp_path):
+    """Test initializing memory with the loaded config shape."""
+    config = MemoryConfig(
+        shallow_decay_days=7,
+        intermediate_decay_days=90,
+        deep_decay_days=365,
+    )
+
+    memory_system = MemorySystem(tmp_path, config=config)
+
+    assert memory_system.shallow_decay_days == 7
+    assert memory_system.intermediate_decay_days == 90
+    assert memory_system.deep_decay_days == 365
 
 
 def test_calculate_memory_score(tmp_path):

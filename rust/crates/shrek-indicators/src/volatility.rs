@@ -1,5 +1,5 @@
 use rust_decimal::Decimal;
-use rust_decimal::prelude::*;
+use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use rust_decimal_macros::dec;
 
 /// Calculate standard deviation of returns
@@ -13,20 +13,23 @@ pub fn standard_deviation(returns: &[Decimal]) -> Decimal {
     
     let variance: Decimal = returns
         .iter()
-        .map(|r| (*r - mean).powi(2))
+        .map(|r| {
+            let diff = *r - mean;
+            diff * diff
+        })
         .sum::<Decimal>() / n;
     
-    variance.sqrt()
+    Decimal::from_f64(variance.to_f64().unwrap_or(0.0).sqrt()).unwrap_or(dec!(0))
 }
 
 /// Calculate annualized volatility from daily returns
 pub fn annualized_volatility(daily_returns: &[Decimal]) -> Decimal {
     let daily_vol = standard_deviation(daily_returns);
-    daily_vol * dec!(252).sqrt()
+    daily_vol * Decimal::from_f64(252.0_f64.sqrt()).unwrap_or(dec!(15.8745078664))
 }
 
 /// Calculate average true range (ATR)
-pub fn average_true_range(high: Decimal, low: Decimal, close: Decimal, prev_close: Decimal) -> Decimal {
+pub fn average_true_range(high: Decimal, low: Decimal, _close: Decimal, prev_close: Decimal) -> Decimal {
     let tr1 = high - low;
     let tr2 = (high - prev_close).abs();
     let tr3 = (low - prev_close).abs();

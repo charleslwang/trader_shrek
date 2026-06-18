@@ -2,6 +2,7 @@ use anyhow::Result;
 use rust_decimal_macros::dec;
 use shrek_core::*;
 use tracing::{debug, error, info, warn};
+use crate::db;
 use crate::state::AppState;
 
 /// Refresh positions from Alpaca and reconcile with local state
@@ -38,6 +39,7 @@ pub async fn refresh_positions(state: &AppState) -> Result<Vec<Position>> {
 }
 
 /// Reconcile orders between Alpaca and local state
+#[allow(dead_code)]
 pub async fn reconcile_orders(state: &AppState) -> Result<()> {
     info!("Reconciling orders");
 
@@ -53,6 +55,7 @@ pub async fn reconcile_orders(state: &AppState) -> Result<()> {
 }
 
 /// Perform full reconciliation on startup
+#[allow(dead_code)]
 pub async fn full_reconciliation(state: &AppState) -> Result<()> {
     info!("Performing full reconciliation");
 
@@ -64,6 +67,7 @@ pub async fn full_reconciliation(state: &AppState) -> Result<()> {
 
     // Take account snapshot
     let account = state.alpaca_client.get_account().await?;
+    debug!("Account snapshot during reconciliation: equity={}", account.equity);
     // Log account snapshot to database
     // This would be implemented in db.rs
 

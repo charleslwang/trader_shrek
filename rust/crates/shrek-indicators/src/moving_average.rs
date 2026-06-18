@@ -1,5 +1,4 @@
 use rust_decimal::Decimal;
-use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
 
 /// Calculate simple moving average
@@ -8,7 +7,7 @@ pub fn simple_moving_average(prices: &[Decimal], period: usize) -> Option<Decima
         return None;
     }
 
-    let sum: Decimal = prices.iter().take(period).sum();
+    let sum: Decimal = prices[prices.len() - period..].iter().sum();
     Some(sum / Decimal::from(period))
 }
 
@@ -63,8 +62,8 @@ mod tests {
     fn test_simple_moving_average() {
         let prices = vec![dec!(100), dec!(101), dec!(102), dec!(103), dec!(104)];
         let sma = simple_moving_average(&prices, 3).unwrap();
-        // (100 + 101 + 102) / 3 = 101
-        assert_eq!(sma, dec!(101));
+        // Latest 3 values: (102 + 103 + 104) / 3 = 103
+        assert_eq!(sma, dec!(103));
     }
 
     #[test]

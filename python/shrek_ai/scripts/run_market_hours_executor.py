@@ -168,7 +168,13 @@ def main():
         
         # Calculate order notional
         if decision_type in ['BUY_STARTER', 'CONVICTION_BUY']:
-            # Starter position (conviction buys get same starter sizing but with higher conviction)
+            # Determine conviction boost
+            conviction_boost = 1.0
+            if decision_type == 'CONVICTION_BUY' and decision.get('is_conviction'):
+                conviction_boost = 1.5
+                logger.info(f"Conviction buy for {symbol}: applying {conviction_boost}x boost")
+
+            # Starter position with optional conviction boost and hard cap
             notional = starter_position_size(
                 equity=equity,
                 starter_position_pct=config.portfolio.starter_position_pct,
@@ -177,13 +183,12 @@ def main():
                 risk_penalty=float(decision['risk_penalty']),
                 thesis_probability=float(decision['thesis_probability']),
                 upside_downside=float(decision['upside_downside']),
+                conviction_boost=conviction_boost,
+                max_single_position_pct=config.portfolio.max_single_position_pct,
             )
-            
-            # For conviction buys, consider larger starter if thesis is strong
-            if decision_type == 'CONVICTION_BUY' and decision.get('is_conviction'):
-                # Increase starter by 50% for conviction (7.5% instead of 5%)
-                notional = min(notional * 1.5, equity * config.portfolio.starter_position_pct * 1.5)
-                logger.info(f"Conviction buy for {symbol}: increased starter to ${notional:.2f}")
+
+            if conviction_boost > 1.0:
+                logger.info(f"Conviction buy for {symbol}: starter size ${notional:.2f}")
             
             # Check max new buys
             if new_buys_sent >= max_new_buys:

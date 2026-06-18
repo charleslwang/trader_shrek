@@ -5,6 +5,7 @@ Earnings transcript processing
 from typing import Dict, Any, Optional, List
 from pathlib import Path
 import json
+import re
 from loguru import logger
 
 
@@ -155,15 +156,70 @@ class TranscriptManager:
     
     def extract_management_guidance(self, transcript: str) -> Dict[str, Any]:
         """
-        Extract management guidance from transcript.
-        
+        Extract management guidance from transcript using keyword heuristics.
+
         Args:
             transcript: Transcript text
-        
+
         Returns:
             Dictionary of guidance items
         """
-        # This would use NLP to extract guidance
-        # For now, return placeholder
-        logger.warning("Guidance extraction not fully implemented")
-        return {}
+        text_lower = transcript.lower()
+        guidance = {}
+
+        # Revenue guidance
+        rev_patterns = [
+            r'(?:revenue|sales)\s+(?:guidance|outlook|expected)\s*[\$]?\s*([\d,]+(?:\.\d+)?)\s*(?:million|billion)?',
+            r'(?:expect|project|guide)\s+(?:revenue|sales)\s*(?:of\s+)?[\$]?\s*([\d,]+(?:\.\d+)?)',
+        ]
+        for pat in rev_patterns:
+            m = re.search(pat, text_lower)
+            if m:
+                try:
+                    guidance['revenue_guidance'] = float(m.group(1).replace(',', ''))
+                    break
+                except (ValueError, IndexError):
+                    continue
+
+        # EPS guidance
+        eps_patterns = [
+            r'(?:eps|earnings per share)\s+(?:guidance|outlook|expected)\s*\$?\s*([\d,]+(?:\.\d+)?)',
+            r'(?:expect|project|guide)\s+(?:eps|earnings per share)\s*(?:of\s+)?\$?\s*([\d,]+(?:\.\d+)?)',
+        ]
+        for pat in eps_patterns:
+            m = re.search(pat, text_lower)
+            if m:
+                try:
+                    guidance['eps_guidance'] = float(m.group(1).replace(',', ''))
+                    break
+                except (ValueError, IndexError):
+                    continue
+
+        # Margin guidance
+        margin_patterns = [
+            r'(?:gross|operating)\s+margin\s+(?:guidance|expected|target)\s*([\d,]+(?:\.\d+)?)%?',
+        ]
+        for pat in margin_patterns:
+            m = re.search(pat, text_lower)
+            if m:
+                try:
+                    val = float(m.group(1).replace(',', ''))
+                    if val > 1:
+                        val = val / 100.0
+                    guidance['margin_guidance'] = val
+                    break
+                except (ValueError, IndexError):
+                    continue
+
+        # Detect guidance stance from surrounding language
+        if guidance:
+            raise_words = ['raise', 'increase', 'raise guidance', 'raise outlook', 'upward', 'higher']
+            cut_words = ['cut', 'lower', 'decrease', 'reduce', 'lower guidance', 'downward', 'lower outlook']
+            if any(w in text_lower for w in raise_words):
+                guidance['guidance_stance'] = 'raise'
+            elif any(w in text_lower for w in cut_words):
+                guidance['guidance_stance'] = 'cut'
+            else:
+                guidance['guidance_stance'] = 'maintain'
+
+        return guidance

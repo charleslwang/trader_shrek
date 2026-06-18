@@ -2,6 +2,7 @@
 Fundamental data processing and financial statement analysis
 """
 
+import re
 from typing import Dict, Any, Optional
 import pandas as pd
 from loguru import logger
@@ -9,50 +10,139 @@ from loguru import logger
 
 class FundamentalsProcessor:
     """Process fundamental data from SEC filings"""
-    
+
     def __init__(self):
         pass
-    
+
+    @staticmethod
+    def _extract_number_near_label(text: str, label: str, patterns: list) -> Optional[float]:
+        """Extract a number near a label using multiple regex patterns."""
+        for pattern in patterns:
+            matches = re.finditer(pattern, text, re.IGNORECASE)
+            for match in matches:
+                try:
+                    val_str = match.group(1).replace(',', '').replace('(', '-').replace(')', '')
+                    val = float(val_str)
+                    return val
+                except (ValueError, IndexError):
+                    continue
+        return None
+
     def parse_income_statement(self, filing_content: str) -> Optional[Dict[str, Any]]:
         """
-        Parse income statement from filing content.
-        
+        Parse income statement from filing content using regex heuristics.
+
         Args:
             filing_content: Filing text content
-        
+
         Returns:
             Dictionary of income statement items
         """
-        # This would use regex or NLP to extract financial data
-        # For now, return placeholder
-        logger.warning("Income statement parsing not fully implemented")
-        return None
-    
+        text = filing_content.lower()
+        data = {}
+
+        patterns = {
+            'revenue': [
+                r'revenues?\s*[,;]?\s*\$?\s*([\d,]+(?:\.\d+)?)\s*(million|billion)?',
+                r'total\s+revenues?\s*[,;]?\s*\$?\s*([\d,]+(?:\.\d+)?)',
+            ],
+            'cogs': [
+                r'cost\s+of\s+(?:revenue|sales|goods)\s*[,;]?\s*\$?\s*([\d,]+(?:\.\d+)?)',
+            ],
+            'operating_income': [
+                r'operating\s+(?:income|profit)\s*[,;]?\s*\$?\s*([\d,]+(?:\.\d+)?)',
+            ],
+            'net_income': [
+                r'net\s+income\s*[,;]?\s*\$?\s*([\d,]+(?:\.\d+)?)',
+                r'net\s+earnings\s*[,;]?\s*\$?\s*([\d,]+(?:\.\d+)?)',
+            ],
+        }
+
+        for key, pats in patterns.items():
+            val = self._extract_number_near_label(text, key, pats)
+            if val is not None:
+                data[key] = val
+
+        if not data:
+            logger.debug("No income statement data extracted from filing")
+            return None
+        return data
+
     def parse_balance_sheet(self, filing_content: str) -> Optional[Dict[str, Any]]:
         """
-        Parse balance sheet from filing content.
-        
+        Parse balance sheet from filing content using regex heuristics.
+
         Args:
             filing_content: Filing text content
-        
+
         Returns:
             Dictionary of balance sheet items
         """
-        logger.warning("Balance sheet parsing not fully implemented")
-        return None
-    
+        text = filing_content.lower()
+        data = {}
+
+        patterns = {
+            'total_assets': [
+                r'total\s+assets\s*[,;]?\s*\$?\s*([\d,]+(?:\.\d+)?)',
+            ],
+            'total_debt': [
+                r'total\s+(?:debt|liabilities)\s*[,;]?\s*\$?\s*([\d,]+(?:\.\d+)?)',
+            ],
+            'current_assets': [
+                r'current\s+assets\s*[,;]?\s*\$?\s*([\d,]+(?:\.\d+)?)',
+            ],
+            'current_liabilities': [
+                r'current\s+liabilities\s*[,;]?\s*\$?\s*([\d,]+(?:\.\d+)?)',
+            ],
+            'cash': [
+                r'cash\s+and\s+cash\s+equivalents\s*[,;]?\s*\$?\s*([\d,]+(?:\.\d+)?)',
+            ],
+        }
+
+        for key, pats in patterns.items():
+            val = self._extract_number_near_label(text, key, pats)
+            if val is not None:
+                data[key] = val
+
+        if not data:
+            logger.debug("No balance sheet data extracted from filing")
+            return None
+        return data
+
     def parse_cash_flow(self, filing_content: str) -> Optional[Dict[str, Any]]:
         """
-        Parse cash flow statement from filing content.
-        
+        Parse cash flow statement from filing content using regex heuristics.
+
         Args:
             filing_content: Filing text content
-        
+
         Returns:
             Dictionary of cash flow items
         """
-        logger.warning("Cash flow parsing not fully implemented")
-        return None
+        text = filing_content.lower()
+        data = {}
+
+        patterns = {
+            'free_cash_flow': [
+                r'free\s+cash\s+flow\s*[,;]?\s*\$?\s*([\d,]+(?:\.\d+)?)',
+            ],
+            'operating_cash_flow': [
+                r'net\s+cash\s+(?:provided\s+by|from)\s+operating\s+activities\s*[,;]?\s*\$?\s*([\d,]+(?:\.\d+)?)',
+            ],
+            'capital_expenditures': [
+                r'capital\s+expenditures?\s*[,;]?\s*\$?\s*([\d,]+(?:\.\d+)?)',
+            ],
+        }
+
+        for key, pats in patterns.items():
+            val = self._extract_number_near_label(text, key, pats)
+            if val is not None:
+                data[key] = val
+
+        if not data:
+            logger.debug("No cash flow data extracted from filing")
+            return None
+        return data
     
     def calculate_metrics(self, financial_data: Dict[str, Any]) -> Dict[str, float]:
         """

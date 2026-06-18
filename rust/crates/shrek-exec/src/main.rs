@@ -9,9 +9,12 @@ use axum::{
 use chrono::Utc;
 use serde_json::json;
 use shrek_core::{TradingMode, *};
+use sqlx::sqlite::SqliteConnectOptions;
 use sqlx::SqlitePool;
-use std::sync::Arc;
 use std::env;
+use std::path::{Path, PathBuf};
+use std::str::FromStr;
+use std::sync::Arc;
 use tokio::net::TcpListener;
 use tracing::{error, info, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -28,6 +31,20 @@ mod reconcile;
 mod logs;
 
 use state::AppState;
+
+fn resolve_config_path(config_path: &str) -> PathBuf {
+    let path = PathBuf::from(config_path);
+    if path.exists() {
+        return path;
+    }
+
+    let parent_path = Path::new("..").join(config_path);
+    if parent_path.exists() {
+        return parent_path;
+    }
+
+    path
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -54,11 +71,12 @@ async fn main() -> Result<()> {
     let is_paper = args.iter().any(|s| s == "--paper");
 
     // Load configuration
+    let resolved_config_path = resolve_config_path(config_path);
     let config: Config = {
-        let config_content = std::fs::read_to_string(config_path)
-            .with_context(|| format!("Failed to read config file: {}", config_path))?;
+        let config_content = std::fs::read_to_string(&resolved_config_path)
+            .with_context(|| format!("Failed to read config file: {}", resolved_config_path.display()))?;
         serde_yaml::from_str(&config_content)
-            .with_context(|| format!("Failed to parse config file: {}", config_path))?
+            .with_context(|| format!("Failed to parse config file: {}", resolved_config_path.display()))?
     };
 
     // Reject live mode explicitly
@@ -80,7 +98,9 @@ async fn main() -> Result<()> {
     // Initialize database
     let db_path = "data/db/shrek_exec.sqlite";
     std::fs::create_dir_all("data/db")?;
-    let pool = SqlitePool::connect(&format!("sqlite:{}", db_path))
+    let db_options = SqliteConnectOptions::from_str(&format!("sqlite:{}", db_path))?
+        .create_if_missing(true);
+    let pool = SqlitePool::connect_with(db_options)
         .await
         .context("Failed to connect to database")?;
 
@@ -162,6 +182,10 @@ async fn propose_order(
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     info!("Received order proposal: {:?}", proposal);
 
+    if let Err(e) = db::log_order_proposal(&state.db_pool, &proposal).await {
+        error!("Failed to log order proposal: {}", e);
+    }
+
     // Validate order
     match risk::validate_order(&state, &proposal).await {
         Ok(_) => {
@@ -188,9 +212,19 @@ async fn propose_order(
         }
         Err(reason) => {
             warn!("Order rejected by risk validation: {}", reason);
+            let rejection = RiskRejection {
+                id: Uuid::new_v4(),
+                decision_id: proposal.decision_id,
+                symbol: proposal.symbol.clone(),
+                reason: reason.to_string(),
+                timestamp: Utc::now(),
+            };
+            if let Err(e) = db::log_risk_rejection(&state.db_pool, &rejection).await {
+                error!("Failed to log risk rejection: {}", e);
+            }
             Ok(Json(json!({
                 "status": "rejected",
-                "reason": reason,
+                "reason": reason.to_string(),
                 "decision_id": proposal.decision_id
             })))
         }
@@ -254,6 +288,11 @@ async fn kill_switch(
             if let Err(e) = db::log_kill_switch(&state.db_pool, &event).await {
                 error!("Failed to log kill switch event: {}", e);
             }
+
+            if let Err(e) = db::set_kill_switch_active(&state.db_pool, true).await {
+                error!("Failed to persist kill switch state: {}", e);
+                return Err(StatusCode::INTERNAL_SERVER_ERROR);
+            }
             
             Ok(Json(json!({
                 "status": "success",
@@ -271,6 +310,11 @@ async fn resume(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     info!("Resuming operations");
+
+    if let Err(e) = db::set_kill_switch_active(&state.db_pool, false).await {
+        error!("Failed to clear kill switch state: {}", e);
+        return Err(StatusCode::INTERNAL_SERVER_ERROR);
+    }
     
     Ok(Json(json!({
         "status": "success",
