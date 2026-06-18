@@ -4,7 +4,7 @@ use reqwest::Client;
 use rust_decimal_macros::dec;
 use serde::{Deserialize, Serialize};
 use shrek_core::{TradingMode, *};
-use tracing::{debug, info, warn};
+use tracing::{info, warn};
 
 #[derive(Debug, Serialize)]
 struct AlpacaOrderRequest {
@@ -34,8 +34,6 @@ struct AlpacaOrderResponse {
     limit_price: Option<String>,
     qty: Option<String>,
     notional: Option<String>,
-    filled_qty: Option<String>,
-    filled_avg_price: Option<String>,
     status: String,
 }
 
@@ -84,13 +82,6 @@ impl AlpacaClient {
             base_url,
             mode,
         }
-    }
-
-    fn auth_headers(&self) -> [(String, String); 2] {
-        [
-            ("APCA-API-KEY-ID".to_string(), self.api_key.clone()),
-            ("APCA-API-SECRET-KEY".to_string(), self.secret_key.clone()),
-        ]
     }
 
     pub async fn submit_order(
