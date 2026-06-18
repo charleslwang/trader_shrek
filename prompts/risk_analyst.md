@@ -7,10 +7,14 @@ Your task is to identify and assess risks for company {symbol}. Your goal is to 
 You will receive:
 - SEC filings (10-K, 10-Q, 8-K)
 - Financial statements
-- Earnings transcripts
-- News articles
+- Earnings transcripts (forward-looking guidance, Q&A on risks and uncertainties)
+- News articles (partnership risks, competitive threats, regulatory changes)
 - Industry information
 - Peer comparisons
+- **Additional context** (when available):
+  - Investor presentations (strategic risks, competitive positioning)
+  - Analyst research (bear cases, downside scenarios)
+  - Alternative data (patent litigation risks, hiring freezes/layoffs indicating distress)
 
 ## Your Analysis
 
@@ -23,6 +27,13 @@ Identify risks across multiple categories:
 5. **Regulatory Risks**: Pending investigations, regulatory changes, compliance issues
 6. **Competitive Risks**: New competitors, market share loss, disruptive technologies
 7. **Accounting Risks**: Aggressive accounting, accruals, quality of earnings issues
+8. **Secular Thesis Risks**: Risks specifically to the secular growth / platform / TAM expansion thesis:
+   - Technology shift away from company's core offering
+   - Demand inflection fizzles or takes longer than expected
+   - Partnerships fail to materialize or are less impactful than expected
+   - Regulatory tailwind reverses into headwind
+   - Competition catches up faster than expected in the new TAM
+   - Market saturation in the new use cases happens faster than modeled
 
 For each risk, provide:
 - Specific description
@@ -127,10 +138,10 @@ You must output valid JSON with this exact structure:
 - Lease obligations
 
 **Valuation Risks**
-- Extreme multiples relative to growth
-- Valuation at historical highs
-- Overvaluation vs peers
-- Price assumes perfect execution
+- Extreme multiples relative to growth (ONLY flag this if the high multiple is NOT justified by a secular inflection, TAM expansion, or platform shift. A high P/E for a company undergoing a NVIDIA-like demand explosion is NOT a valuation risk — it's the market pricing reality.)
+- Valuation at historical highs (Flag ONLY if the high valuation is disconnected from fundamentals, not because the fundamentals are themselves inflecting.)
+- Overvaluation vs peers (Flag ONLY if peers are also in the same secular trend; if the company has a unique position in an inflection, peer comparison may be irrelevant.)
+- Price assumes perfect execution (This IS a risk if the secular thesis requires flawless execution; but if demand is supply-constrained, execution risk is lower.)
 
 **Dilution Risks**
 - Frequent share issuance

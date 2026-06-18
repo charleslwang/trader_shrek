@@ -44,6 +44,7 @@ Shrek uses a hybrid Python + Rust architecture:
 - SEC filing retrieval and parsing
 - Financial statement processing
 - LLM research agents
+- Multi-agent debate system (optional)
 - Retrieval-augmented generation
 - Company memory
 - Valuation models
@@ -66,6 +67,133 @@ Shrek uses a hybrid Python + Rust architecture:
 - Limit-order management
 - Execution logs
 - Safety checks
+
+## Multi-Agent Debate System (Optional)
+
+Shrek can operate in multi-agent mode where two AI agents with opposing perspectives debate investment decisions until reaching consensus.
+
+### Configuration
+
+Enable multi-agent mode in `config/shrek.paper.yaml`:
+
+```yaml
+llm:
+  enabled: true
+  runtime: openai  # Options: ollama, openai, huggingface
+  model: gpt-4o
+  api_key_env: OPENAI_API_KEY
+  base_url: https://api.openai.com/v1
+
+multi_agent:
+  enabled: true
+  max_conversation_rounds: 5
+  consensus_threshold: 0.80
+  log_debates: true
+  
+  agent_1:
+    name: "analyst_a"
+    runtime: openai  # Different runtime for adversarial diversity
+    model: gpt-4o
+    api_key_env: OPENAI_API_KEY
+    base_url: https://api.openai.com/v1
+    role: "bullish_analyst"
+    personality: "optimistic_growth_focused"
+    
+  agent_2:
+    name: "analyst_b"
+    runtime: huggingface  # Different runtime and model for adversarial diversity
+    model: Qwen/Qwen2.5-72B-Instruct
+    api_key_env: HF_API_KEY
+    base_url: https://api-inference.huggingface.co/models
+    role: "bearish_analyst"
+    personality: "conservative_risk_focused"
+```
+
+### Supported LLM Backends
+
+Shrek supports three LLM backends:
+
+**1. OpenAI (Recommended for Production)**
+- Models: `gpt-4o`, `gpt-4-turbo`, `gpt-3.5-turbo`
+- Best for: Deep financial analysis, complex reasoning, SEC filing interpretation
+- Pros: Highest quality, excellent for research, strong JSON support
+- Cons: API costs, rate limits
+- Setup: Set `OPENAI_API_KEY` environment variable
+
+**2. HuggingFace (Recommended for Cost-Effective)**
+- Models: `Qwen/Qwen2.5-72B-Instruct`, `meta-llama/Llama-3.1-70B-Instruct`, `mistralai/Mistral-Large-Instruct-2407`
+- Best for: Cost-effective large models, adversarial diversity
+- Pros: Free tier available, many open-source models, adversarial model diversity
+- Cons: Inference API can be slower, no native chat (converts to prompt)
+- Setup: Set `HF_API_KEY` environment variable
+
+**3. Ollama (Recommended for Local/Privacy)**
+- Models: `qwen3:8b`, `llama3:8b`, `mistral:7b`
+- Best for: Local execution, privacy, no API costs
+- Pros: Free, local, no data leaves your machine
+- Cons: Limited to smaller models (8B), less capable for deep research
+- Setup: Install Ollama, run `ollama serve`
+
+### Recommended Model Combinations for Adversarial Convergence
+
+For effective adversarial convergence, use different model families:
+
+**Laptop-Friendly (Current Config):**
+- Agent 1: `deepseek-r1:8b` (Ollama) - Strong reasoning, 8B distilled model
+- Agent 2: `qwen3:8b` (Ollama) - Different model family, 8B
+- Both run locally on laptop via Ollama
+- Setup: `ollama pull deepseek-r1:8b` and `ollama pull qwen3:8b`
+
+**High-End (Best Quality):**
+- Agent 1: `gpt-4o` (OpenAI) - Strong reasoning, bullish perspective
+- Agent 2: `Qwen/Qwen2.5-72B-Instruct` (HF) - Different training, bearish perspective
+
+**Cost-Effective:**
+- Agent 1: `gpt-4o-mini` (OpenAI) - Good quality, lower cost
+- Agent 2: `meta-llama/Llama-3.1-70B-Instruct` (HF) - Large open-source model
+
+### Model Capabilities for Financial Research
+
+**Best for Deep Financial Research:**
+1. **gpt-4o** - Strongest reasoning, excellent for complex financial analysis
+2. **Qwen2.5-72B-Instruct** - Large open-source model, good financial understanding
+3. **Llama-3.1-70B-Instruct** - Strong general reasoning, good for financial tasks
+
+**Adequate for Basic Research:**
+1. **gpt-4o-mini** - Good quality, faster and cheaper
+2. **Mistral-Large-Instruct-2407** - Strong open-source model
+3. **qwen3:8b** - Adequate for simpler analysis tasks
+
+**Laptop-Friendly (Local Deployment):**
+1. **deepseek-r1:8b** - Strong reasoning (97.3% MATH-500), chain-of-thought
+2. **qwen3:8b** - Good general reasoning, Apache 2.0 licensed
+3. **llama3:8b** - Strong general model, Meta-trained
+
+**Not Recommended for Deep Research:**
+- Models < 7B parameters (limited reasoning depth)
+- Models not trained on financial data (may miss domain-specific patterns)
+
+### How It Works
+
+1. **Initial Positions**: Both agents analyze the same data and provide initial recommendations
+2. **Debate Rounds**: Agents take turns responding to each other's arguments
+3. **Consensus Check**: After each round, the system checks if agents have reached consensus
+4. **Decision**: If consensus is reached (≥80% agreement), the decision is accepted. If not after max rounds, a weighted decision is made.
+5. **Logging**: All debates are logged to `data/debates.jsonl` for transparency and analysis
+
+### Benefits
+
+- **Reduced Bias**: Opposing perspectives balance each other out
+- **Better Decisions**: Debate surfaces risks and opportunities that single-agent analysis might miss
+- **Transparency**: Full debate logs show reasoning behind decisions
+- **Confidence Scoring**: Consensus scores indicate decision reliability
+
+### When to Use
+
+- **High-stakes decisions**: Large position sizes or important portfolio changes
+- **Complex situations**: When analysis is ambiguous or conflicting signals exist
+- **Research mode**: For analyzing decision quality and improving prompts
+- **Disabled by default**: Single-agent mode is faster and sufficient for routine decisions
 
 ## Mathematical Entry Model
 
@@ -367,36 +495,106 @@ pip install -e .
 
 ## Running Shrek
 
+### Prerequisites
+
+1. Install dependencies:
+```bash
+cd python
+pip install -r requirements.txt
+```
+
+2. Set up environment variables:
+```bash
+cp .env.example .env
+# Edit .env with your API keys
+```
+
+3. Start Ollama (if using local LLM):
+```bash
+ollama serve
+ollama pull deepseek-r1:8b
+ollama pull qwen3:8b
+```
+
+### Manual Daily Workflow
+
+Shrek is designed for manual, intermittent execution. Research can be done at any time, and trading activity is always based on the most recent research for each symbol.
+
+**Research (run anytime - morning, afternoon, or evening):**
+```bash
+cd python
+python -m shrek_ai.scripts.manual_daily_workflow --research
+```
+
+This will:
+- Research all candidates in `data/candidates.txt`
+- Skip symbols already researched today (resumable)
+- Generate investment decisions using multi-agent LLM analysis
+- Store decisions in DuckDB database (`data/storage/shrek_analytics.duckdb`)
+- **All research is persisted** in the database and available for future trading
+
+**Execute Orders (run when you want to trade - uses latest research regardless of date):**
+```bash
+python -m shrek_ai.scripts.manual_daily_workflow --execute
+```
+
+This will:
+- Load the **latest research decision for each symbol** (not just today)
+- Calculate position sizes based on latest research
+- Propose both BUY and SELL orders to Rust daemon
+- Rust daemon handles order submission, fills, and risk checks
+
+**Check Status:**
+```bash
+python -m shrek_ai.scripts.manual_daily_workflow --status
+```
+
+Shows:
+- Latest research for each symbol (regardless of when it was done)
+- Current positions
+- Research database stats (total decisions, date range)
+
+**Full Workflow (research + execute):**
+```bash
+python -m shrek_ai.scripts.manual_daily_workflow --full
+```
+
+### Key Features for Manual Execution
+
+- **Research Anytime**: Run research at any point during the day
+- **Latest Research Always Used**: Trading uses the most recent research per symbol, regardless of date
+- **Research Database**: All research is stored in DuckDB (`data/storage/shrek_analytics.duckdb`)
+- **Resumable Research**: If research is interrupted, re-running will skip already-researched symbols
+- **State Persistence**: All decisions and state stored in `data/storage/`
+- **Any-Time Execution**: Can start at any point during the day
+- **Idempotent**: Safe to run multiple times
+
 ### Rust Execution Daemon
 
-```bash
-# Dry-run mode
-cargo run -p shrek-exec -- --config config/shrek.paper.yaml --dry-run
+The Rust daemon handles:
+- Order submission to Alpaca
+- Order update streaming
+- Position reconciliation
+- Risk checks and kill switch
+- Limit order management (15-minute timeout)
 
-# Paper mode
+Start the Rust daemon (required for order execution):
+```bash
+cd rust
 cargo run -p shrek-exec -- --config config/shrek.paper.yaml --paper
 ```
 
-### Python Scripts
+### Additional Python Scripts
 
 ```bash
-# Build universe
+# Build universe (run periodically)
 python -m shrek_ai.scripts.build_universe
 
-# Research a company
-python -m shrek_ai.scripts.research_company --symbol XYZ
+# Research a single company
+python -m shrek_ai.scripts.research_company AAPL
 
-# Run daily research
+# Run daily research directly (skips already-researched symbols)
 python -m shrek_ai.scripts.run_daily_research
-
-# Run market hours executor (dry-run)
-python -m shrek_ai.scripts.run_market_hours_executor --dry-run
-
-# Run market hours executor (paper)
-python -m shrek_ai.scripts.run_market_hours_executor --paper
-
-# Post-market review
-python -m shrek_ai.scripts.post_market_review
 
 # Backtest
 python -m shrek_ai.scripts.backtest_shrek

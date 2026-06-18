@@ -17,6 +17,7 @@ class TimingAnalyst:
     def __init__(self):
         self.llm_config = get_llm_config()
         self.llm = LLMClient(
+            runtime=self.llm_config.get('runtime', 'ollama'),
             base_url=self.llm_config['base_url'],
             model=self.llm_config['model'],
         )

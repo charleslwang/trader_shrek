@@ -29,9 +29,9 @@ portfolio:
   max_single_position_pct: 0.20
   starter_position_pct: 0.05
   normal_position_pct: 0.10
-  max_new_buys_per_day: 3
-  max_sells_per_day: 5
-  rebalance_frequency_days: 5
+  max_new_buys_per_day: 10
+  max_sells_per_day: 10
+  rebalance_frequency_days: 1
 
 entry_thresholds:
   min_shrek_score: 0.75
@@ -66,17 +66,43 @@ orders:
   time_in_force: day
   limit_buy_discount_bps: 20
   limit_sell_premium_bps: 10
-  order_timeout_minutes: 60
+  order_timeout_minutes: 15
   allow_market_orders: false
 
 llm:
   enabled: true
-  runtime: ollama
-  model: qwen3:8b
+  runtime: ollama  # Local inference for laptop deployment
+  model: qwen3:8b  # 8B model runs on laptop
+  api_key_env: null  # Not needed for Ollama
+  base_url: http://localhost:11434  # Local Ollama server
   require_json: true
   require_source_citations: true
   no_unsupported_claims: true
   max_context_chunks: 12
+
+multi_agent:
+  enabled: true
+  max_conversation_rounds: 5
+  consensus_threshold: 0.80
+  log_debates: true
+  
+  agent_1:
+    name: "analyst_a"
+    runtime: ollama  # Local inference
+    model: deepseek-r1:8b  # DeepSeek R1 8B (distilled) - strong reasoning
+    api_key_env: null
+    base_url: http://localhost:11434
+    role: "bullish_analyst"
+    personality: "optimistic_growth_focused"
+    
+  agent_2:
+    name: "analyst_b"
+    runtime: ollama  # Local inference
+    model: qwen3:8b  # Qwen 3.5 8B - different model family for adversarial diversity
+    api_key_env: null
+    base_url: http://localhost:11434
+    role: "bearish_analyst"
+    personality: "conservative_risk_focused"
 
 memory:
   shallow_decay_days: 14

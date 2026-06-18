@@ -60,7 +60,15 @@ class StorageManager:
                 rust_accept BOOLEAN,
                 rust_reject_reason VARCHAR,
                 source_docs VARCHAR,
-                memo_path VARCHAR
+                memo_path VARCHAR,
+                secular_conviction DOUBLE,
+                narrative_conviction DOUBLE,
+                is_conviction BOOLEAN,
+                multi_agent BOOLEAN,
+                consensus_score DOUBLE,
+                debate_rounds INTEGER,
+                decision_confidence DOUBLE,
+                decision_reasoning VARCHAR
             )
         """)
         
@@ -87,7 +95,7 @@ class StorageManager:
         """
         self.conn.execute("""
             INSERT INTO decisions VALUES (
-                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
             )
         """, (
             decision.get('decision_id'),
@@ -117,6 +125,14 @@ class StorageManager:
             decision.get('rust_reject_reason'),
             decision.get('source_docs'),
             decision.get('memo_path'),
+            decision.get('secular_conviction'),
+            decision.get('narrative_conviction'),
+            decision.get('is_conviction'),
+            decision.get('multi_agent'),
+            decision.get('consensus_score'),
+            decision.get('debate_rounds'),
+            decision.get('decision_confidence'),
+            decision.get('decision_reasoning'),
         ))
         
         logger.debug(f"Saved decision {decision.get('decision_id')}")
@@ -221,6 +237,24 @@ class StorageManager:
         query += " ORDER BY date DESC"
         
         return self.conn.execute(query, params).df()
+    
+    def get_latest_decisions(self) -> pd.DataFrame:
+        """
+        Retrieve the latest decision for each symbol across all time.
+        
+        Returns:
+            DataFrame with one row per symbol (the most recent research for that symbol)
+        """
+        query = """
+            SELECT d.*
+            FROM decisions d
+            INNER JOIN (
+                SELECT symbol, MAX(date) as max_date
+                FROM decisions
+                GROUP BY symbol
+            ) latest ON d.symbol = latest.symbol AND d.date = latest.max_date
+        """
+        return self.conn.execute(query).df()
     
     def export_to_parquet(self, table_name: str, output_path: Optional[Path] = None) -> Path:
         """

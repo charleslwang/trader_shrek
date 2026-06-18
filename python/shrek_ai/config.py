@@ -91,10 +91,33 @@ class LLMConfig:
     enabled: bool
     runtime: str
     model: str
-    require_json: bool
-    require_source_citations: bool
-    no_unsupported_claims: bool
-    max_context_chunks: int
+    api_key_env: Optional[str] = None
+    base_url: Optional[str] = None
+    require_json: bool = True
+    require_source_citations: bool = True
+    no_unsupported_claims: bool = True
+    max_context_chunks: int = 12
+
+
+@dataclass
+class AgentConfig:
+    name: str
+    runtime: str
+    model: str
+    api_key_env: Optional[str] = None
+    base_url: Optional[str] = None
+    role: str = ""
+    personality: str = ""
+
+
+@dataclass
+class MultiAgentConfig:
+    enabled: bool
+    max_conversation_rounds: int
+    consensus_threshold: float
+    log_debates: bool
+    agent_1: AgentConfig
+    agent_2: AgentConfig
 
 
 @dataclass
@@ -124,6 +147,7 @@ class Config:
     exit_thresholds: ExitThresholds
     orders: OrdersConfig
     llm: LLMConfig
+    multi_agent: Optional[MultiAgentConfig]
     memory: MemoryConfig
     risk: RiskConfig
 
@@ -155,6 +179,18 @@ def load_config(config_path: Optional[Path] = None) -> Config:
     with open(config_path, 'r') as f:
         config_dict = yaml.safe_load(f)
     
+    # Handle optional multi_agent config
+    multi_agent_config = None
+    if 'multi_agent' in config_dict and config_dict['multi_agent'].get('enabled', False):
+        multi_agent_config = MultiAgentConfig(
+            enabled=config_dict['multi_agent']['enabled'],
+            max_conversation_rounds=config_dict['multi_agent']['max_conversation_rounds'],
+            consensus_threshold=config_dict['multi_agent']['consensus_threshold'],
+            log_debates=config_dict['multi_agent']['log_debates'],
+            agent_1=AgentConfig(**config_dict['multi_agent']['agent_1']),
+            agent_2=AgentConfig(**config_dict['multi_agent']['agent_2']),
+        )
+    
     return Config(
         account=AccountConfig(**config_dict['account']),
         session=SessionConfig(**config_dict['session']),
@@ -165,6 +201,7 @@ def load_config(config_path: Optional[Path] = None) -> Config:
         exit_thresholds=ExitThresholds(**config_dict['exit_thresholds']),
         orders=OrdersConfig(**config_dict['orders']),
         llm=LLMConfig(**config_dict['llm']),
+        multi_agent=multi_agent_config,
         memory=MemoryConfig(**config_dict['memory']),
         risk=RiskConfig(**config_dict['risk']),
     )
@@ -184,6 +221,7 @@ def get_alpaca_config() -> dict:
 def get_llm_config() -> dict:
     """Get LLM configuration from environment"""
     return {
+        'runtime': get_env('LLM_RUNTIME', 'ollama'),
         'base_url': get_env('OLLAMA_BASE_URL', 'http://localhost:11434'),
         'model': get_env('OLLAMA_MODEL', 'qwen3:8b'),
     }

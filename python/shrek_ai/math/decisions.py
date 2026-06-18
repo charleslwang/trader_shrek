@@ -68,6 +68,8 @@ def entry_decision(
     thesis_probability: float,
     timing: float,
     is_speculative: bool = False,
+    secular_conviction: float = 0.0,
+    narrative_conviction: float = 0.0,
     thresholds: Optional[dict] = None,
 ) -> Tuple[str, str]:
     """
@@ -83,6 +85,8 @@ def entry_decision(
         thesis_probability: Thesis probability
         timing: Timing score
         is_speculative: Whether this is a speculative/small-cap
+        secular_conviction: Secular/platform thesis conviction (0 to 1)
+        narrative_conviction: Narrative/TAM expansion conviction (0 to 1)
         thresholds: Optional custom thresholds
     
     Returns:
@@ -90,6 +94,15 @@ def entry_decision(
     """
     if position_exists:
         return "HOLD", "Position already exists"
+    
+    # Check if CONVICTION_BUY criteria are met
+    has_conviction = (
+        secular_conviction >= 0.70 and
+        narrative_conviction >= 0.70 and
+        risk_penalty <= 0.55 and
+        quality >= 0.60 and
+        thesis_probability >= 0.65
+    )
     
     # Use appropriate thresholds
     if is_speculative:
@@ -115,6 +128,33 @@ def entry_decision(
                 'min_timing': 0.45,
             }
     
+    # If conviction buy criteria met, use RELAXED thresholds
+    if has_conviction:
+        relaxed_thresholds = thresholds.copy()
+        relaxed_thresholds['min_expected_return'] = 0.12  # Down from 20%
+        relaxed_thresholds['min_upside_downside'] = 1.5   # Down from 2.0x
+        relaxed_thresholds['min_shrek_score'] = 0.65      # Down from 0.75
+        relaxed_thresholds['min_timing'] = 0.35            # Down from 0.45
+        
+        # Check investability gate with relaxed thresholds
+        if not investability_gate(
+            expected_return,
+            upside_downside,
+            quality,
+            risk_penalty,
+            thesis_probability,
+            timing,
+            relaxed_thresholds,
+        ):
+            return "AVOID", "Fails even relaxed investability gate for conviction thesis"
+        
+        # Check relaxed Shrek score
+        if shrek_score < relaxed_thresholds['min_shrek_score']:
+            return "WATCH", f"Shrek score {shrek_score:.2f} below relaxed conviction threshold {relaxed_thresholds['min_shrek_score']}"
+        
+        return "CONVICTION_BUY", f"Secular conviction {secular_conviction:.0%} + narrative conviction {narrative_conviction:.0%} with relaxed thresholds"
+    
+    # Standard path
     # Check investability gate
     if not investability_gate(
         expected_return,
@@ -256,7 +296,7 @@ def add_on_pullback_decision(
         return "HOLD", "Expected return not improved"
     
     # Check if thesis still intact
-    if current_thesis_penalty < entry_thesis_probability - 0.10:
+    if current_thesis_probability < entry_thesis_probability - 0.10:
         return "HOLD", "Thesis degraded too much"
     
     # Check if risk increased too much

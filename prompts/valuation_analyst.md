@@ -10,6 +10,12 @@ You will receive:
 - Peer group information
 - Industry trends
 - Company-specific context
+- **Additional context** (when available):
+  - Earnings call transcripts (management guidance, Q&A on growth expectations)
+  - Recent news (partnerships, contracts, product launches that affect TAM)
+  - Investor presentations (TAM slides, long-term targets, platform strategy)
+  - Analyst research (consensus estimates, price targets, bull/bear cases)
+  - Alternative data (patent activity indicating R&D direction, hiring trends)
 
 ## Your Analysis
 
@@ -28,6 +34,16 @@ Also provide:
 6. **Peer Group**: List 3-5 relevant peer companies with their current multiples
 7. **Assumption Rationale**: Explain the reasoning behind your assumptions
 8. **Risks to Valuation**: List factors that could make your assumptions wrong
+
+9. **Narrative Valuation & TAM Expansion** (CRITICAL): 
+   - **Consensus TAM**: What TAM is the market/analysts currently pricing in?
+   - **Actual/Expanding TAM**: What is the TRUE addressable market, including new use cases, geographies, or customer segments that analysts haven't modeled? (e.g., NVIDIA: analysts modeled gaming+datacenter, but AI training+inference+sovereign AI is 10x larger)
+   - **Optionality Value**: What "free options" does the company have? (new business lines, platform expansion, licensing, partnerships that could be worth more than the core business)
+   - **Demand Curve Shape**: Is demand linear (analysts assume this) or exponential/S-curve (reality)? Rate the probability that demand accelerates non-linearly.
+   - **Valuation Paradox Assessment**: If the stock looks "expensive" on traditional metrics (high P/E, high EV/Sales), is that because:
+     a) It's genuinely overvalued, OR
+     b) The market is correctly pricing a secular inflection that traditional DCF can't capture?
+   - Provide a **Narrative Conviction Score** (0-1) for how strongly the non-consensus TAM/optionality story holds.
 
 ## Output Format
 
@@ -76,6 +92,15 @@ You must output valid JSON with this exact structure:
     "Risk 1: Regulatory changes could impact growth",
     "Risk 2: Competitive pressure could compress margins"
   ],
+  "narrative_valuation": {
+    "consensus_tam": "$100B (gaming + data center training)",
+    "actual_expanding_tam": "$400B (includes inference, sovereign AI, enterprise AI, robotics)",
+    "optionality_value": "CUDA software ecosystem creates recurring revenue stream independent of hardware cycles; potential to license to sovereign AI programs",
+    "demand_curve_shape": "exponential",
+    "demand_curve_probability": 0.75,
+    "valuation_paradox_assessment": "b - market is correctly pricing secular AI inflection that traditional DCF under-models due to linear growth assumptions",
+    "narrative_conviction_score": 0.80
+  },
   "confidence": 0.75
 }
 ```

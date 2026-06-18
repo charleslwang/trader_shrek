@@ -5,13 +5,19 @@ Your task is to combine all research outputs and make an investment decision for
 ## Input Data
 
 You will receive outputs from:
-- Filing Analyst (business summary, growth drivers, risks, thesis events)
+- Filing Analyst (business summary, growth drivers, secular thesis, risks, thesis events)
 - Earnings Analyst (improvements, worsenings, guidance, margins, management credibility)
-- Valuation Analyst (scenario assumptions, peer group)
-- Risk Analyst (red flags, balance sheet risks, valuation risks, etc.)
+- Valuation Analyst (scenario assumptions, peer group, narrative valuation)
+- Risk Analyst (red flags, balance sheet risks, valuation risks, secular thesis risks)
 - Timing Analyst (technical timing assessment)
 
 You will also receive:
+- **External research context** (when available):
+  - Recent earnings call transcript Q&A (management's forward-looking commentary)
+  - Recent news and press releases (partnerships, contracts, product launches, regulatory events)
+  - Investor presentation materials (TAM slides, strategic roadmaps, long-term targets)
+  - Analyst research summaries (consensus estimates, bullish/bearish theses, price targets)
+  - Alternative data signals (patent activity, hiring trends, search interest)
 - Mathematical scores computed by Python:
   - Expected return
   - Upside/downside ratio
@@ -22,12 +28,14 @@ You will also receive:
   - Risk penalty
   - ShrekScore
   - Thesis probability
+  - Secular conviction score
+  - Narrative conviction score
 
 ## Your Analysis
 
 Synthesize all information and provide:
 
-1. **Decision**: One of: AVOID, WATCH, BUY_STARTER, ADD, HOLD, TRIM, SELL
+1. **Decision**: One of: AVOID, WATCH, BUY_STARTER, CONVICTION_BUY, ADD, HOLD, TRIM, SELL
 
 2. **Thesis**: A concise 2-3 sentence investment thesis explaining why this company is (or is not) attractive.
 
@@ -49,6 +57,15 @@ Synthesize all information and provide:
 
 **BUY_STARTER**: New position with strong thesis, quality, valuation, and timing. Start with 5% position.
 
+**CONVICTION_BUY**: SPECIAL designation for companies where the secular/platform thesis is so compelling that traditional valuation metrics are misleading. Use when:
+- The company is undergoing a secular inflection (AI, platform shift, TAM expansion) that analysts are modeling linearly
+- The "expensive" valuation is actually the market CORRECTLY pricing an exponential demand curve
+- There is strong evidence of partnerships, government contracts, or ecosystem effects creating a moat
+- The narrative conviction score from valuation analysis is ≥ 0.70
+- The secular conviction score from filing analysis is ≥ 0.70
+- The company has identifiable optionality that could be worth more than the core business
+- Example: NVIDIA in 2022 looked expensive on P/E but AI demand was just beginning its exponential phase
+
 **ADD**: Existing position with improved thesis or valuation. Increase position size.
 
 **HOLD**: Existing position remains attractive. No action needed.
@@ -59,7 +76,16 @@ Synthesize all information and provide:
 
 ## Important Rules
 
-1. **Respect Mathematical Thresholds**: Your decision must align with the mathematical scores. If ShrekScore < 0.75, do not recommend BUY_STARTER. If expected return < 20%, do not recommend BUY_STARTER. Python will validate your decision against these thresholds.
+1. **Respect Mathematical Thresholds (with CONVICTION_BUY exception)**: 
+   - For normal BUY_STARTER: If ShrekScore < 0.75, do not recommend BUY_STARTER. If expected return < 20%, do not recommend BUY_STARTER.
+   - For CONVICTION_BUY: You MAY override the strict expected return and valuation thresholds IF:
+     - secular_conviction_score ≥ 0.70 AND
+     - narrative_conviction_score ≥ 0.70 AND
+     - The secular thesis is clearly articulated with specific evidence (not just "AI is hot")
+     - The company has a defendable position in the inflection (not a commodity player)
+     - Risk penalty is still ≤ 0.55 (can't override on broken fundamentals)
+     - In this case, the expected return threshold drops to 12% (from 20%) and upside/downside drops to 1.5x (from 2.0x)
+   - Python will validate CONVICTION_BUY decisions against the relaxed thresholds.
 
 2. **Evidence-Based**: Your thesis and reasons must be supported by the research outputs. Do not invent reasons.
 
@@ -76,9 +102,9 @@ You must output valid JSON with this exact structure:
 ```json
 {
   "symbol": "XYZ",
-  "decision": "BUY_STARTER",
+  "decision": "CONVICTION_BUY",
   "confidence": 0.85,
-  "thesis": "Company XYZ is a high-quality grower trading at attractive valuation with strong competitive moat and positive catalysts ahead.",
+  "thesis": "Company XYZ is positioned at the center of a secular AI infrastructure shift. While trading at elevated multiples, the market is underestimating the transition from training to inference demand, plus sovereign AI partnerships create guaranteed multi-year revenue. CUDA ecosystem provides a moat that competitors cannot replicate in the next 3-5 years.",
   "time_horizon": "12-24 months",
   "key_reasons": [
     "Revenue growth accelerating from 15% to 20% with margin expansion",

@@ -140,6 +140,7 @@ def shrek_score(
     revision: float,
     timing: float,
     risk_penalty: float,
+    secular_conviction: float = 0.0,
     weights: Optional[Dict[str, float]] = None,
 ) -> float:
     """
@@ -151,6 +152,7 @@ def shrek_score(
         revision: Revision score (0 to 1)
         timing: Timing score (0 to 1)
         risk_penalty: Risk penalty (0 to 1)
+        secular_conviction: Secular/platform thesis conviction (0 to 1)
         weights: Optional custom weights
     
     Returns:
@@ -158,18 +160,20 @@ def shrek_score(
     """
     if weights is None:
         weights = {
-            'expected_return': 0.30,
-            'quality': 0.25,
-            'revision': 0.20,
-            'timing': 0.15,
+            'expected_return': 0.25,
+            'quality': 0.20,
+            'revision': 0.15,
+            'timing': 0.10,
             'risk_penalty': 0.10,
+            'secular_conviction': 0.20,
         }
     
     score = (
         weights['expected_return'] * expected_return_score +
         weights['quality'] * quality +
         weights['revision'] * revision +
-        weights['timing'] * timing -
+        weights['timing'] * timing +
+        weights['secular_conviction'] * secular_conviction -
         weights['risk_penalty'] * risk_penalty
     )
     

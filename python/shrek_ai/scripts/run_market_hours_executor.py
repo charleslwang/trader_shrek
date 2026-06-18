@@ -128,31 +128,43 @@ def main():
     positions = alpaca_account.get_positions()
     position_map = {p['symbol']: p for p in positions}
     
-    # Get today's decisions
-    today = datetime.now().date().isoformat()
-    decisions_df = storage_manager.get_decisions(start_date=today, end_date=today)
+    # Get latest decisions for each symbol (most recent research regardless of date)
+    decisions_df = storage_manager.get_latest_decisions()
     
-    logger.info(f"Found {len(decisions_df)} decisions for today")
+    logger.info(f"Found {len(decisions_df)} latest decisions across all dates")
     
     # Process each decision
     orders_sent = 0
     max_new_buys = config.portfolio.max_new_buys_per_day
+    max_sells = config.portfolio.max_sells_per_day
     new_buys_sent = 0
+    sells_sent = 0
     
     for _, decision in decisions_df.iterrows():
         symbol = decision['symbol']
         decision_type = decision['decision']
         
-        # Skip if not a buy decision
-        if decision_type not in ['BUY_STARTER', 'ADD']:
+        # Check if this is a buy or sell decision
+        is_buy = decision_type in ['BUY_STARTER', 'ADD', 'CONVICTION_BUY']
+        is_sell = decision_type in ['SELL', 'TRIM']
+        
+        if not is_buy and not is_sell:
             continue
         
         # Check if position exists
         position = position_map.get(symbol)
         
+        # Get current price
+        try:
+            quote = alpaca_account.api.get_latest_quote(symbol)
+            current_price = (quote.ap + quote.bp) / 2
+        except Exception as e:
+            logger.warning(f"Could not get quote for {symbol}: {e}, skipping")
+            continue
+        
         # Calculate order notional
-        if decision_type == 'BUY_STARTER':
-            # Starter position
+        if decision_type in ['BUY_STARTER', 'CONVICTION_BUY']:
+            # Starter position (conviction buys get same starter sizing but with higher conviction)
             notional = starter_position_size(
                 equity=equity,
                 starter_position_pct=config.portfolio.starter_position_pct,
@@ -163,12 +175,20 @@ def main():
                 upside_downside=decision['upside_downside'],
             )
             
+            # For conviction buys, consider larger starter if thesis is strong
+            if decision_type == 'CONVICTION_BUY' and decision.get('is_conviction'):
+                # Increase starter by 50% for conviction (7.5% instead of 5%)
+                notional = min(notional * 1.5, equity * config.portfolio.starter_position_pct * 1.5)
+                logger.info(f"Conviction buy for {symbol}: increased starter to ${notional:.2f}")
+            
             # Check max new buys
             if new_buys_sent >= max_new_buys:
                 logger.warning(f"Max new buys ({max_new_buys}) reached, skipping {symbol}")
                 continue
             
             new_buys_sent += 1
+            side = "buy"
+            limit_price = current_price * (1 - config.orders.limit_buy_discount_bps / 10000)
         
         elif decision_type == 'ADD':
             # Add to existing position
@@ -185,32 +205,42 @@ def main():
                 current_position_value=current_position_value,
                 target_position_value=target_position_value,
             )
+            
+            side = "buy"
+            limit_price = current_price * (1 - config.orders.limit_buy_discount_bps / 10000)
+        
+        elif is_sell:
+            # Sell or trim existing position
+            if position is None:
+                logger.warning(f"{decision_type} decision for {symbol} but no position exists, skipping")
+                continue
+            
+            if sells_sent >= max_sells:
+                logger.warning(f"Max sells ({max_sells}) reached, skipping {symbol}")
+                continue
+            
+            sells_sent += 1
+            
+            # Sell entire position for SELL, or use notional if specified
+            notional = position['market_value'] if decision_type == 'SELL' else decision.get('notional', position['market_value'] * 0.5)
+            side = "sell"
+            limit_price = current_price * (1 + config.orders.limit_sell_premium_bps / 10000)
         
         # Skip if notional is too small
         if notional < 1.0:
             logger.info(f"Notional ${notional:.2f} too small for {symbol}, skipping")
             continue
         
-        # Get current price
-        quote = alpaca_account.api.get_latest_quote(symbol)
-        current_price = (quote.ap + quote.bp) / 2
-        
-        # Calculate limit price
-        if decision_type == 'BUY_STARTER':
-            limit_price = current_price * (1 - config.orders.limit_buy_discount_bps / 10000)
-        else:
-            limit_price = current_price * (1 - config.orders.limit_buy_discount_bps / 10000)
-        
         # Propose order to Rust daemon
         try:
             response = executor.propose_order(
                 symbol=symbol,
-                side="buy",
+                side=side,
                 notional=notional,
                 order_type="limit",
                 limit_price=limit_price,
                 time_in_force=config.orders.time_in_force,
-                reason=f"{decision_type} decision from daily research",
+                reason=f"{decision_type} decision from latest research (dated {decision['date']})",
                 source_decision_path=f"data/decisions/{decision['decision_id']}.json",
             )
             

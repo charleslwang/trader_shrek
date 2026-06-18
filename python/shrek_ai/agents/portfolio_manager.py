@@ -24,6 +24,7 @@ class PortfolioManager:
     def __init__(self):
         self.llm_config = get_llm_config()
         self.llm = LLMClient(
+            runtime=self.llm_config.get('runtime', 'ollama'),
             base_url=self.llm_config['base_url'],
             model=self.llm_config['model'],
         )
@@ -127,8 +128,32 @@ class PortfolioManager:
         
         decision_type = decision.get('decision', 'AVOID')
         
-        # If LLM recommends buy, verify it passes investability gate
-        if decision_type in ['BUY_STARTER', 'ADD']:
+        # If LLM recommends CONVICTION_BUY, verify conviction criteria
+        if decision_type == 'CONVICTION_BUY':
+            secular_conviction = mathematical_scores.get('secular_conviction', 0)
+            narrative_conviction = mathematical_scores.get('narrative_conviction', 0)
+            risk_penalty = mathematical_scores.get('risk_penalty', 0)
+            quality = mathematical_scores.get('quality', 0)
+            thesis_probability = mathematical_scores.get('thesis_probability', 0)
+            
+            if not (secular_conviction >= 0.70 and narrative_conviction >= 0.70):
+                logger.warning(f"LLM recommended CONVICTION_BUY but secular={secular_conviction:.2f}, narrative={narrative_conviction:.2f}")
+                decision['decision'] = 'WATCH'
+                decision['validation_override'] = 'Conviction scores below threshold for CONVICTION_BUY'
+            elif risk_penalty > 0.55:
+                logger.warning(f"LLM recommended CONVICTION_BUY but risk_penalty={risk_penalty:.2f} exceeds 0.55")
+                decision['decision'] = 'WATCH'
+                decision['validation_override'] = 'Risk too high for CONVICTION_BUY'
+            elif quality < 0.60 or thesis_probability < 0.65:
+                logger.warning(f"LLM recommended CONVICTION_BUY but quality={quality:.2f}, thesis_prob={thesis_probability:.2f}")
+                decision['decision'] = 'WATCH'
+                decision['validation_override'] = 'Quality/thesis too low for CONVICTION_BUY'
+            else:
+                # CONVICTION_BUY validated - ensure it maps to a buy for downstream
+                decision['is_conviction'] = True
+        
+        # If LLM recommends normal buy, verify it passes investability gate
+        elif decision_type in ['BUY_STARTER', 'ADD']:
             investable = investability_gate(
                 expected_return=mathematical_scores.get('expected_return', 0),
                 upside_downside=mathematical_scores.get('upside_downside', 0),

@@ -6,10 +6,15 @@ Your task is to analyze earnings releases, transcripts, and related 8-K filings 
 
 You will receive:
 - Earnings release text
-- Earnings transcript (if available)
+- Earnings transcript (if available) - including full Q&A with analysts
 - Related 8-K filings
 - Guidance information
 - Management Q&A excerpts
+- **Additional context** (when available):
+  - Recent news articles (post-earnings reactions, analyst notes)
+  - Investor presentation materials (quarterly deck)
+  - Analyst research updates (estimate changes, rating actions)
+  - Alternative data (job postings indicating hiring acceleration/freeze)
 
 ## Your Analysis
 

@@ -46,7 +46,7 @@ def piotroski_f_score(
     """
     f1 = 1 if roa > 0 else 0
     f2 = 1 if cfo > 0 else 0
-    f3 = 1 if roa_current > roa_prior else 0
+    f3 = 1 if roa > roa_prior else 0
     f4 = 1 if cfo > net_income else 0
     f5 = 1 if long_term_debt_ratio_current < long_term_debt_ratio_prior else 0
     f6 = 1 if current_ratio_current > current_ratio_prior else 0
