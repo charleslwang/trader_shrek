@@ -21,10 +21,10 @@ pub async fn get_decision_events(
     pool: &SqlitePool,
     decision_id: uuid::Uuid,
 ) -> anyhow::Result<Vec<OrderEvent>> {
-    let rows = sqlx::query_as::<_, (String, String, String, String, String, String, Option<String>, Option<String>, String, String, Option<String>, String)>(
+    let rows = sqlx::query_as::<_, (String, String, String, String, String, String, Option<String>, Option<String>, String, String, Option<String>, String, Option<String>)>(
         r#"
         SELECT id, decision_id, client_order_id, symbol, side, order_type,
-               limit_price, quantity, status, filled_quantity, filled_price, timestamp
+               limit_price, quantity, status, filled_quantity, filled_price, timestamp, broker_order_id
         FROM order_events
         WHERE decision_id = ?
         ORDER BY timestamp DESC
@@ -36,11 +36,12 @@ pub async fn get_decision_events(
 
     let events = rows
         .into_iter()
-        .map(|(id, decision_id, client_order_id, symbol, side, order_type, limit_price, quantity, status, filled_quantity, filled_price, timestamp)| {
+        .map(|(id, decision_id, client_order_id, symbol, side, order_type, limit_price, quantity, status, filled_quantity, filled_price, timestamp, broker_order_id)| {
             OrderEvent {
                 id: uuid::Uuid::parse_str(&id).unwrap_or_default(),
                 decision_id: uuid::Uuid::parse_str(&decision_id).unwrap_or_default(),
                 client_order_id,
+                broker_order_id,
                 symbol,
                 side: match side.as_str() {
                     "Buy" => Side::Buy,

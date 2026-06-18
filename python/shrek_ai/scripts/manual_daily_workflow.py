@@ -17,9 +17,6 @@ import argparse
 from pathlib import Path
 from loguru import logger
 
-# Add parent directory to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
 from shrek_ai.config import load_config, load_env
 from shrek_ai.storage import StorageManager
 from shrek_ai.alpaca_account import AlpacaAccount
@@ -52,13 +49,19 @@ def execute_orders():
 def show_status():
     """Show current status - latest research for each symbol"""
     load_env()
-    config = load_config()
     
     storage_manager = StorageManager(Path('data/storage'))
     alpaca_account = AlpacaAccount()
     
-    from datetime import datetime
-    today = datetime.now().date().isoformat()
+    import math
+    
+    def safe_float(value, default=0.0):
+        """Convert API values to finite floats."""
+        try:
+            parsed = float(value)
+            return parsed if math.isfinite(parsed) else default
+        except (TypeError, ValueError):
+            return default
     
     # Get latest decisions for each symbol (regardless of date)
     latest_decisions = storage_manager.get_latest_decisions()
@@ -90,7 +93,9 @@ def show_status():
         positions = alpaca_account.get_positions()
         logger.info(f"\nCurrent positions: {len(positions)}")
         for pos in positions:
-            logger.info(f"  {pos['symbol']}: {pos['qty']} shares @ ${pos['avg_entry_price']:.2f}")
+            qty = safe_float(pos.get('qty'))
+            avg_price = safe_float(pos.get('avg_entry_price'))
+            logger.info(f"  {pos['symbol']}: {qty} shares @ ${avg_price:.2f}")
     except Exception as e:
         logger.warning(f"Could not fetch positions: {e}")
     
