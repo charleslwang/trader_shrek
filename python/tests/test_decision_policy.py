@@ -42,6 +42,27 @@ def test_low_confidence_valuation_blocks_buy():
     assert "Valuation provenance" in decision["deterministic_gate_reason"]
 
 
+def test_existing_position_starter_buy_converts_through_add_gate():
+    decision = validate_final_decision(
+        {"decision": "BUY_STARTER"},
+        PASSING_BUY_METRICS,
+        position_exists=True,
+    )
+    assert decision["decision"] == "ADD"
+    assert "add gate" in decision["deterministic_gate_reason"]
+
+
+def test_existing_position_starter_buy_holds_when_add_gate_fails():
+    metrics = {**PASSING_BUY_METRICS, "shrek_score": 0.70}
+    decision = validate_final_decision(
+        {"decision": "BUY_STARTER"},
+        metrics,
+        position_exists=True,
+    )
+    assert decision["decision"] == "HOLD"
+    assert "does not pass add gate" in decision["deterministic_gate_reason"]
+
+
 def test_sell_requires_position_and_weak_metrics():
     weak_metrics = {
         **PASSING_BUY_METRICS,

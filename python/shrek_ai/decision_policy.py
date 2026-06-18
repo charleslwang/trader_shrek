@@ -151,7 +151,11 @@ def validate_final_decision(
         if proxy_confidence < 0.40:
             return finish(Decision.WATCH.value, "Too many key scores rely on low-confidence proxies")
 
-        if requested == Decision.ADD.value and position_exists is True:
+        if requested in {
+            Decision.ADD.value,
+            Decision.BUY_STARTER.value,
+            Decision.CONVICTION_BUY.value,
+        } and position_exists is True:
             if investability_gate(
                 expected_return=expected_return,
                 upside_downside=upside_downside,
@@ -162,7 +166,7 @@ def validate_final_decision(
                 thresholds=thresholds,
             ) and shrek_score >= 0.78:
                 return finish(Decision.ADD.value, "Existing position passes add gate")
-            return finish(Decision.HOLD.value, "ADD failed deterministic add gate")
+            return finish(Decision.HOLD.value, "Existing position does not pass add gate")
 
         deterministic, reason = entry_decision(
             position_exists=False,
